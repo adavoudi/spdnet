@@ -76,17 +76,3 @@ class AfewDataset(Dataset):
         sample = {'data': torch.from_numpy(data), 'label': torch.from_numpy(label)}
 
         return sample
-
-
-if __name__ == '__main__':
-
-    transformed_dataset = AfewDataset('./data/AFEW', '/home/alireza/projects/SPDNet/data/afew/spddb_afew_train_spd400_int_histeq.mat')
-    dataloader = DataLoader(transformed_dataset, batch_size=4,
-                        shuffle=False, num_workers=4)
-
-    
-    for i_batch, sample_batched in enumerate(dataloader):
-        print(i_batch, sample_batched['data'].size(),
-          sample_batched['label'].size())
-
-

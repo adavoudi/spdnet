@@ -13,7 +13,7 @@ from SPDNet import *
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.trans1 = SPDTransform(400, 50)
+        self.trans1 = SPDTransform(400, 200)
         self.trans2 = SPDTransform(200, 100)
         self.trans3 = SPDTransform(100, 50)
         self.rect1  = SPDRectified()
@@ -23,36 +23,27 @@ class Net(nn.Module):
         self.linear = nn.Linear(1275, 7, bias=False)
 
     def forward(self, x):
-        # x = self.gkernel(x)
-        # print('-1: ', is_pos_def(x))
         x = self.trans1(x)
-        # print('0: ', is_pos_def(x))
         x = self.rect1(x)
-        # x = self.trans2(x)
-        # print('1: ', is_pos_def(x))
-        # x = self.rect2(x)
-        # x = self.trans3(x)
-        # print('2: ', is_pos_def(x))
-        # x = self.rect3(x)
+        x = self.trans2(x)
+        x = self.rect2(x)
+        x = self.trans3(x)
+        x = self.rect3(x)
         x = self.tangent(x)
         x = self.linear(x)
-        # print('3: ', x)
         return x
 
 
-
-
-transformed_dataset = AfewDataset('/home/alireza/projects/TF_SPDNet/data/AFEW', '/home/alireza/projects/SPDNet/data/afew/spddb_afew_train_spd400_int_histeq.mat', train=True)
+transformed_dataset = AfewDataset('./data/AFEW', './data/afew/spddb_afew_train_spd400_int_histeq.mat', train=True)
 dataloader = DataLoader(transformed_dataset, batch_size=30,
                     shuffle=True, num_workers=4)
 
-transformed_dataset_val = AfewDataset('/home/alireza/projects/TF_SPDNet/data/AFEW', '/home/alireza/projects/SPDNet/data/afew/spddb_afew_train_spd400_int_histeq.mat', train=False)
+transformed_dataset_val = AfewDataset('./data/AFEW', './data/afew/spddb_afew_train_spd400_int_histeq.mat', train=False)
 dataloader_val = DataLoader(transformed_dataset_val, batch_size=30,
                     shuffle=False, num_workers=4)
 
 
 model = Net()
-# model = model.double()
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 optimizer = StiefelMetaOptimizer(optimizer)
