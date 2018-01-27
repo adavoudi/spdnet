@@ -10,6 +10,13 @@ eps = 0.00001
 def symmetric(A):
     return 0.5 * (A + A.t())
 
+def is_nan_or_inf(A):
+    C1 = torch.nonzero(A == float('inf'))
+    C2 = torch.nonzero(A != A)
+    if len(C1.size()) > 0 or len(C2.size()) > 0:
+        return True
+    return False
+
 def is_pos_def(x):
     x = x.cpu().detach().numpy()
     return np.all(np.linalg.eigvals(x) > 0)
@@ -51,9 +58,22 @@ class StiefelMetaOptimizer(object):
                     continue
 
                 if isinstance(p, StiefelParameter):
+                    if(is_nan_or_inf(p.data)):
+                        print('\nBefore')
+                        print('\nP:')
+                        print(p.data)
+                        print('Grad:')
+                        print(p.grad.data)
+                        exit(0)
                     Q, R = p.data.qr()
                     p.data = Q.clone()
-                    
+                    if(is_nan_or_inf(p.data)):
+                        print('\nAfter')
+                        print('\nP:')
+                        print(p.data)
+                        print('Grad:')
+                        print(p.grad.data)
+                        exit(0)
 
         return loss
 
@@ -102,10 +122,11 @@ class SPDTransformFunction(Function):
             for k, g in enumerate(grad_output):
                 if len(g.shape) == 1:
                     continue
-                grad_input[k] = weight.mm(g.mm(weight.t()))
+                P = weight.mm(g.mm(weight.t()))
+                grad_input[k] = P.clone()
 
-            grad_input[grad_input == float('inf')] = 0
-            grad_input[grad_input != grad_input] = 0
+            # grad_input[grad_input == float('inf')] = 0
+            # grad_input[grad_input != grad_input] = 0
 
         if ctx.needs_input_grad[1]:
             grad_weight = weight.new(input.size(0), weight.size(0), weight.size(1))
@@ -115,9 +136,18 @@ class SPDTransformFunction(Function):
                     continue
                 P1 = 2 * x.mm(weight.mm(g))
                 P2 = P1 - weight.mm(weight.t()).mm(P1)
-                P2[P2 == float('inf')] = 0
-                P2[P2 != P2] = 0
-                grad_weight[k] = P2
+
+                if(is_nan_or_inf(P2.data)):
+                    print('\ncomputing weight grad')
+                    print('\nGrad:')
+                    print(P2.data)
+                    print('input grad:')
+                    print(g.data)
+                    exit(0)
+
+                # P2[P2 == float('inf')] = 0
+                # P2[P2 != P2] = 0
+                grad_weight[k] = P2.clone()
             
             grad_weight = grad_weight.mean(0)
 
@@ -183,12 +213,12 @@ class SPDTangentSpaceFunction(Function):
     @staticmethod
     def forward(ctx, input):
         ctx.save_for_backward(input)
-        rand_spd = torch.randn(input.size(1), input.size(1)) * eps
-        rand_spd = rand_spd + rand_spd.t()
+        # rand_spd = torch.randn(input.size(1), input.size(1)) * eps
+        # rand_spd = rand_spd + rand_spd.t()
         
         output = input.new(input.size(0), input.size(1), input.size(2))
         for k, x in enumerate(input):
-            x = x + rand_spd
+            # x = x + rand_spd
             u, s, v = x.svd()
             s.log_()
             output[k] = u.mm(s.diag().mm(u.t()))
@@ -201,14 +231,14 @@ class SPDTangentSpaceFunction(Function):
         input = input[0]
         grad_input = None
 
-        rand_spd = Variable(torch.randn(input.size(1), input.size(1)) * eps)
-        rand_spd = rand_spd + rand_spd.t()
+        # rand_spd = Variable(torch.randn(input.size(1), input.size(1)) * eps)
+        # rand_spd = rand_spd + rand_spd.t()
 
         if ctx.needs_input_grad[0]:
             grad_input = input.new(input.size(0), input.size(1), input.size(1))
             for k, g in enumerate(grad_output):
                 x = input[k]
-                x = x + rand_spd
+                # x = x + rand_spd
                 try:
                     u, s, v = x.svd()
                 except:
@@ -257,14 +287,18 @@ class SPDRectifiedFunction(Function):
     def forward(ctx, input, epsilon):
         ctx.save_for_backward(input, epsilon)
 
-        rand_spd = torch.randn(input.size(1), input.size(1)) * eps
-        rand_spd = rand_spd + rand_spd.t()
+        # rand_spd = torch.randn(input.size(1), input.size(1)) * eps
+        # rand_spd = rand_spd + rand_spd.t()
                     
         output = input.new(input.size(0), input.size(1), input.size(2))
         for k, x in enumerate(input):
-            x = x + rand_spd
-            u, s, v = x.svd()
-            s[s < epsilon].fill_(float(epsilon))
+            # x = x + rand_spd
+            try:
+                u, s, v = x.svd()
+            except:
+                print(x)
+                exit(0)
+            s[s < epsilon].fill_(epsilon[0])
             output[k] = u.mm(s.diag().mm(u.t()))
         return output
 
@@ -273,8 +307,8 @@ class SPDRectifiedFunction(Function):
         input, epsilon = ctx.saved_variables
         grad_input = None
         
-        rand_spd = Variable(torch.randn(input.size(1), input.size(1)) * eps)
-        rand_spd = rand_spd + rand_spd.t()
+        # rand_spd = Variable(torch.randn(input.size(1), input.size(1)) * eps)
+        # rand_spd = rand_spd + rand_spd.t()
 
         if ctx.needs_input_grad[0]:
             Q = input.new(input.size(1), input.size(1))
@@ -282,8 +316,15 @@ class SPDRectifiedFunction(Function):
             for k, g in enumerate(grad_output):
                 if len(g.shape) == 1:
                     continue
+                # g2 = g.clone()
+                # val = 10000
+                # if torch.max(torch.abs(g)) > val:
+                    # g = g / val #(torch.max(torch.abs(g)) + 0.0001)
+                    # print('shod')
+                    # g = g * val 
+                # g[g<-10000] = -10000
                 x = input[k]
-                x = x + rand_spd
+                # x = x + rand_spd
                 u, s, v = x.svd()
                 max_mask = s > epsilon
                 s_max_diag = s; s_max_diag[~max_mask] = epsilon; s_max_diag = s_max_diag.diag()
@@ -296,10 +337,47 @@ class SPDRectifiedFunction(Function):
                 P[mask_zero] = 0
                 dLdV = 2*(g.mm(u.mm(s_max_diag)))
                 dLdS = Q.mm(u.t().mm(g.mm(u)))
-                P2 = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
-                P2[P2 == float('inf')] = 0
-                P2[P2 != P2] = 0
+                dLdV = dLdV / (torch.max(torch.abs(dLdV)) + 0.0001)
+                P4 = u.t().mm(dLdV)
+                P7 = P.t()
+                # _,max_val_g = g.view(-1).max(0)[1]
+                # _,max_val_p4 = P4.view(-1).max(0)[1]
+                # print('Mul max vals: ', max_val_g * max_val_p4)
+                P6 = P7 * P4
+                P3 = symmetric(P6)
+                P5 = P3+dLdS
+                P2 = u.mm(P5).mm(u.t())
+                # P2[P2 == float('inf')] = 0
+                # P2[P2 != P2] = 0
                 grad_input[k] = P2
+
+                if(is_nan_or_inf(P2.data)):
+                    print('\nP4')
+                    print(P4)
+                    print('\ncomputing rectified grad')
+                    print('P4: ', is_nan_or_inf(P4.data), ', P3: ', is_nan_or_inf(P3.data), ', P5: ', is_nan_or_inf(P5.data))
+                    print('P2: ', is_nan_or_inf(P2.data), 'P6: ', is_nan_or_inf(P6.data), 'P: ', is_nan_or_inf(P.data))
+                    print('P7: ', is_nan_or_inf(P7.data))
+                    print('U: ', is_nan_or_inf(u.data), ', S: ', is_nan_or_inf(s.data), ', V: ', is_nan_or_inf(v.data))
+                    print('data:')
+                    print(x)
+                    print('Does it contains nan or inf: ', is_nan_or_inf(x.data))
+                    print('\nGrad:')
+                    print(P2.data)
+                    print('input grad:')
+                    print(g.data)
+                    print('Does it contains nan or inf: ', is_nan_or_inf(g.data))
+                    print('P:')
+                    print(P.data)
+                    print('Does it contains nan or inf: ', is_nan_or_inf(P.data))
+                    print('Count maskzero: ', torch.nonzero(mask_zero.data))
+                    print('dLdV:')
+                    print(dLdV)
+                    print('Does it contains nan or inf: ', is_nan_or_inf(dLdV.data))
+                    print('dLdS:')
+                    print(dLdS)
+                    print('Does it contains nan or inf: ', is_nan_or_inf(dLdS.data))
+                    exit(0)
             
         return grad_input, None
 
