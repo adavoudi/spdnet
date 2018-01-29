@@ -65,74 +65,7 @@ class StiefelMetaOptimizer(object):
 
 
         return loss
-
-
-class PolynomialKernel(nn.Module):
-
-    def __init__(self, degree=1, r=0):
-        super(PolynomialKernel, self).__init__()
-        self.degree = degree
-        self.r = r
-
-
-    def forward(self, input):
-        """
-        Arguments:
-            input {Tensor} -- A 3-D tensor of size :math:`(N, C, M)`
-        
-        Returns:
-            [Tensor] -- :math:`N` SPD matrices of size :math:`(C, C)`, i.e. :math:`(N, C, C)`
-        """
-        output = input.new(input.size(0), input.size(1), input.size(1))
-
-        for k, x in enumerate(input):
-            P = x.mm(x.t())
-            P = P.add(self.r)
-            P = P.pow(self.degree)
-            output[k] = P
-
-        return output
-
-
-class GaussianKernel(nn.Module):
-
-    def __init__(self, kernel_width, laplacian_kernel=False):
-        """
-        Arguments:
-            kernel_width {float} -- -0.5/sigma^2 if 
-        
-        Keyword Arguments:
-            laplacian_kernel {bool} -- Whether to use Laplacian kernel (default: {False})
-        """
-
-        super(GaussianKernel, self).__init__()
-        self.kernel_width = kernel_width
-        self.laplacian_kernel = laplacian_kernel
-
-    def forward(self, input):
-        """
-        Arguments:
-            input {Tensor} -- A 3-D tensor of size :math:`(N, C, M)`
-        
-        Returns:
-            [Tensor] -- :math:`N` SPD matrices of size :math:`(C, C)`, i.e. :math:`(N, C, C)`
-        """
-
-        output = input.new(input.size(0), input.size(1), input.size(1))
-
-        for k, x in enumerate(input):
-            P1 = x.mm(x.t())
-            P2 = P1.diag(0)
-            P2 = P2.unsqueeze(1)
-            P2 = P2.repeat(1, P2.size(0))
-            P2 = P2 + P2.t()
-            P2 = P2 - 2*P1
-            if self.laplacian_kernel:
-                P2 = P2.sqrt()
-            output[k] = torch.exp(-self.kernel_width*P2)
-
-        return output
-    
+   
 
 class SPDTransformFunction(Function):
 
