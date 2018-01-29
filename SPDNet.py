@@ -99,7 +99,8 @@ class SPDTransformFunction(Function):
                 if len(g.shape) == 1:
                     continue
                 P1 = 2 * x.mm(weight.mm(g))
-                grad_weight[k] = P1 - weight.mm(weight.t()).mm(P1)
+                P2 = weight.mm(weight.t())
+                grad_weight[k] = P1 - P2.mm(P1)
             
             grad_weight = grad_weight.mean(0)
 
@@ -139,13 +140,11 @@ class SPDVectorizeFunction(Function):
 
         if ctx.needs_input_grad[0]:
             grad_input = input.new(len(input), input.size(1), input.size(2))
+            grad_input.fill_(0)
             for k, g in enumerate(grad_output):
-                grad_input[k][torch.triu(torch.ones(input.size(1), input.size(2))) == 1] = g
-                grad_input[k] = grad_input[k] + grad_input[k].t()
+                grad_input[k][torch.triu(torch.ones(input.size(1), input.size(2))) == 1] = g.clone()
+                grad_input[k] = grad_input[k] + grad_input[k].t()   
                 grad_input[k][torch.eye(input.size(1), input.size(2)) == 1] /= 2
-
-            grad_input[grad_input == float('inf')] = 0
-            grad_input[grad_input != grad_input] = 0
 
         return grad_input
 
@@ -189,15 +188,15 @@ class SPDTangentSpaceFunction(Function):
                 s_inv_diag = (1/s).diag()
                 
                 P = s.unsqueeze(1)
-                P = P.repeat(1, P.size(0))
+                P = P.expand(-1, P.size(0))
                 P = P - P.t()
-                mask_zero = P == 0
+                mask_zero = torch.abs(P) == 0
                 P = 1 / P
                 P[mask_zero] = 0
                 
                 dLdV = 2*(g.mm(u.mm(s_log_diag)))
                 dLdS = s_inv_diag.mm(u.t().mm(g.mm(u)))
-                
+
                 grad_input[k] = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
 
 
@@ -254,18 +253,15 @@ class SPDRectifiedFunction(Function):
                 Q.fill_(0); Q[max_mask] = 1
                 
                 P = s.unsqueeze(1)
-                P = P.repeat(1, P.size(0))
+                P = P.expand(-1, P.size(0))
                 P = P - P.t()
-                mask_zero = P == 0
+                mask_zero = torch.abs(P) == 0
                 P = 1 / P
                 P[mask_zero] = 0
                 
                 dLdV = 2*(g.mm(u.mm(s_max_diag)))
                 dLdS = Q.mm(u.t().mm(g.mm(u)))
                 
-                # The following statement solves the overflow problem in multiplication 
-                # and also seems it speed up the learning! (Experimental)
-                dLdV = dLdV / (torch.max(torch.abs(dLdV)) + 0.0001)
                 grad_input[k] = u.mm(symmetric(P.t() * u.t().mm(dLdV))+dLdS).mm(u.t())
             
         return grad_input, None
