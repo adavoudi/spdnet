@@ -20,7 +20,8 @@ class Net(nn.Module):
         self.rect2  = SPDRectified()
         self.rect3  = SPDRectified()
         self.tangent = SPDTangentSpace() 
-        self.linear = nn.Linear(1275, 7, bias=False)
+        self.linear = nn.Linear(1275, 7, bias=True)
+        self.dropout = nn.Dropout(p=0.3)
 
     def forward(self, x):
         x = self.trans1(x)
@@ -30,6 +31,7 @@ class Net(nn.Module):
         x = self.trans3(x)
         x = self.rect3(x)
         x = self.tangent(x)
+        x = self.dropout(x)
         x = self.linear(x)
         return x
 
@@ -45,7 +47,7 @@ dataloader_val = DataLoader(transformed_dataset_val, batch_size=30,
 
 model = Net()
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 optimizer = StiefelMetaOptimizer(optimizer)
 
 # Training
