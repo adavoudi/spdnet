@@ -195,7 +195,7 @@ class SPDTangentSpaceFunction(Function):
                 dLdV = 2*(g.mm(u.mm(s_log_diag)))
                 dLdS = s_inv_diag.mm(u.t().mm(g.mm(u)))
 
-                grad_input[k] = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
+                grad_input[k] = - u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
 
 
         return grad_input
