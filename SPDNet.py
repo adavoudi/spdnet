@@ -53,7 +53,6 @@ class StiefelMetaOptimizer(object):
                 and returns the loss.
         """
         loss = self.optimizer.step(closure)
-
         for group in self.optimizer.param_groups:
             for p in group['params']:
                 if p.grad is None:
@@ -62,7 +61,6 @@ class StiefelMetaOptimizer(object):
                 if isinstance(p, StiefelParameter):
                     Q, R = p.data.qr()
                     p.data = Q.clone()
-
 
         return loss
    
@@ -100,7 +98,7 @@ class SPDTransformFunction(Function):
                     continue
                 P1 = 2 * x.mm(weight.mm(g))
                 P2 = weight.mm(weight.t())
-                grad_weight[k] = P1 - P2.mm(P1)
+                grad_weight[k] = P2.mm(P1) - P1 
             
             grad_weight = grad_weight.mean(0)
 
