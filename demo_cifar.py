@@ -67,7 +67,7 @@ class CifarNet_1_Base(nn.Module):
 class CifarNet_1(nn.Module):
     def __init__(self):
         super(CifarNet_1, self).__init__()
-        self.gkernel_1 = GaussianKernel(64, subtract_mean=True, use_center=False, kernel_width=0.1, laplacian_kernel=False, center_init_scale=1)
+        self.gkernel_1 = GaussianKernel(64, use_center=False, kernel_width=0.1, laplacian_kernel=False, center_init_scale=1)
         # self.gkernel_2 = GaussianKernel(64, use_center=False, kernel_width=None, laplacian_kernel=False, center_init_scale=3)
         # self.mix = MixKernel(use_weight_for_a=True, use_weight_for_b=True)
         self.trans = SPDTransform(64, 20)
@@ -84,7 +84,7 @@ class CifarNet_1(nn.Module):
         out = self.trans(out)
         out = self.rect(out)
         out = self.tangent(out)
-        out = self.dropout(out)
+        # out = self.dropout(out)
         out = self.linear(out)
 
         return out
@@ -115,11 +115,15 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False,
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
-use_cuda = False
+use_cuda = True
+
+if use_cuda:
+    model_base = model_base.cuda()
+
 criterion = nn.CrossEntropyLoss()
 
 optimizer_base = optim.Adam(model_base.parameters(), lr=0.01)
-optimizer_spdnet = optim.Adam(spdnet.parameters(), lr=0.0001)
+optimizer_spdnet = optim.Adam(list(spdnet.parameters())+list(model_base.parameters()), lr=0.0001)
 optimizer_spdnet = StiefelMetaOptimizer(optimizer_spdnet)
 
 # Training
@@ -135,21 +139,22 @@ def train(epoch, train_spdnet=False):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets
         
-        optimizer_base.zero_grad()
-
         inputs, targets = Variable(inputs), Variable(targets)
-        outputs = model_base(inputs)
+
+        # if train_spdnet:
+        optimizer_base.zero_grad()
+        optimizer_spdnet.zero_grad()
+        outputs = model_base(inputs, True)
+        outputs = spdnet(outputs.cpu())
         loss = criterion(outputs, targets)        
         loss.backward()
+        optimizer_spdnet.step()
         optimizer_base.step()
+        # else:
+        #     outputs = model_base(inputs)
+        #     loss = criterion(outputs, targets)        
+        #     loss.backward()
 
-        if train_spdnet:
-            optimizer_spdnet.zero_grad()
-            outputs = model_base(inputs, True)
-            outputs = spdnet(outputs)
-            loss = criterion(outputs, targets)        
-            loss.backward()
-            optimizer_spdnet.step()
 
         train_loss += loss.data[0]
         _, predicted = torch.max(outputs.data, 1)
@@ -173,11 +178,11 @@ def test(epoch, test_spdnet=False):
             inputs, targets = inputs.cuda(), targets
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
         
-        if test_spdnet:
-            outputs = model_base(inputs, True)
-            outputs = spdnet(outputs)
-        else:
-            outputs = model_base(inputs, False)
+        # if test_spdnet:
+        outputs = model_base(inputs, True)
+        outputs = spdnet(outputs.cpu())
+        # else:
+            # outputs = model_base(inputs, False)
 
         loss = criterion(outputs, targets)
 
@@ -190,26 +195,26 @@ def test(epoch, test_spdnet=False):
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
     # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'base': model_base,
-            'net': spdnet,
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/kspd-ckpt.t7')
-        best_acc = acc
+    # acc = 100.*correct/total
+    # if acc > best_acc:
+    #     print('Saving..')
+    #     state = {
+    #         'base': model_base,
+    #         'net': spdnet,
+    #         'acc': acc,
+    #         'epoch': epoch,
+    #     }
+    #     if not os.path.isdir('checkpoint'):
+    #         os.mkdir('checkpoint')
+    #     torch.save(state, './checkpoint/kspd-ckpt.t7')
+    #     best_acc = acc
 
 
-for epoch in range(1):
-    train(epoch)
-    test(epoch)
+# for epoch in range(2):
+#     train(epoch)
+#     test(epoch)
 
-print('Training SPDNet ... ')
+# print('Training SPDNet ... ')
 
 for epoch in range(20):
     train(epoch, True)
