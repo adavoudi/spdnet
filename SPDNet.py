@@ -195,7 +195,7 @@ class SPDTangentSpaceFunction(Function):
                 dLdV = 2*(g.mm(u.mm(s_log_diag)))
                 dLdS = s_inv_diag.mm(u.t().mm(g.mm(u)))
 
-                grad_input[k] = - u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
+                grad_input[k] = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
 
 
         return grad_input
@@ -274,4 +274,72 @@ class SPDRectified(nn.Module):
     def forward(self, input):
         epsilon = Variable(self.epsilon, requires_grad=False)
         output = SPDRectifiedFunction.apply(input, epsilon)
+        return output
+
+
+class SPDPowerFunction(Function):
+
+    @staticmethod
+    def forward(ctx, input, weight):
+        ctx.save_for_backward(input, weight)
+
+        output = input.new(input.size(0), input.size(1), input.size(2))
+        for k, x in enumerate(input):
+            u, s, v = x.svd()
+            s = torch.exp(weight * torch.log(s))
+            output[k] = u.mm(s.diag().mm(u.t()))
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, weight = ctx.saved_variables
+        grad_input = None
+        grad_weight = None
+        
+        grad_input = input.new(input.size(0), input.size(1), input.size(2))
+        grad_weight = weight.new(input.size(0), weight.size(0))
+        for k, g in enumerate(grad_output):
+            if len(g.shape) == 1:
+                continue
+
+            x = input[k]
+            u, s, v = x.svd()
+            
+            s_log = torch.log(s)
+            s_power = torch.exp(weight * s_log)
+            s_power = s_power.diag()
+            s_power_w_1 = weight * torch.exp((weight-1) * s_log)
+            s_power_w_1 = s_power_w_1.diag()
+            s_log = s_log.diag()
+            
+            grad_w = s_log.mm(u.mm(s_power.mm(u.t()))).mm(g)
+            grad_weight[k] = grad_w.diag()
+            
+            P = s.unsqueeze(1)
+            P = P.expand(-1, P.size(0))
+            P = P - P.t()
+            mask_zero = torch.abs(P) == 0
+            P = 1 / P
+            P[mask_zero] = 0
+            
+            dLdV = 2*(g.mm(u.mm(s_power)))
+            dLdS = s_power_w_1.mm(u.t().mm(g.mm(u)))
+            
+            grad_input[k] = u.mm(symmetric(P.t() * u.t().mm(dLdV))+dLdS).mm(u.t())
+                
+        grad_weight = grad_weight.mean(0)
+        # print(grad_weight)
+        
+        return grad_input, grad_weight
+
+
+class SPDPower(nn.Module):
+
+    def __init__(self, input_dim):
+        super(SPDPower, self).__init__()
+        self.weight = nn.Parameter(torch.FloatTensor(input_dim), requires_grad=True)
+        nn.init.normal(self.weight)
+
+    def forward(self, input):
+        output = SPDPowerFunction.apply(input, self.weight)
         return output
