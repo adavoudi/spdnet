@@ -98,9 +98,9 @@ class SPDTransformFunction(Function):
                     continue
                 P1 = 2 * x.mm(weight.mm(g))
                 P2 = weight.mm(weight.t())
-                grad_weight[k] = P2.mm(P1) - P1 
+                grad_weight[k] = P1 - P2.mm(P1)  
             
-            grad_weight = -grad_weight.mean(0)
+            grad_weight = grad_weight.mean(0)
 
         return grad_input, grad_weight
 
@@ -303,7 +303,9 @@ class SPDPowerFunction(Function):
         input, weight = ctx.saved_variables
         grad_input = None
         grad_weight = None
-        
+
+        eye = input.new(input.size(1))
+        eye.fill_(1); eye = eye.diag()
         grad_input = input.new(input.size(0), input.size(1), input.size(2))
         grad_weight = weight.new(input.size(0), weight.size(0))
         for k, g in enumerate(grad_output):
@@ -312,26 +314,29 @@ class SPDPowerFunction(Function):
 
             x = input[k]
             u, s, v = x.svd()
+
+            g = symmetric(g)
             
             s_log = torch.log(s)
             s_power = torch.exp(weight * s_log)
+
             s_power = s_power.diag()
             s_power_w_1 = weight * torch.exp((weight-1) * s_log)
             s_power_w_1 = s_power_w_1.diag()
             s_log = s_log.diag()
             
-            grad_w = s_log.mm(u.mm(s_power.mm(u.t()))).mm(g)
+            grad_w = s_log.mm(u.t().mm(s_power.mm(u))).mm(g)
             grad_weight[k] = grad_w.diag()
+
+            dLdV = 2*(g.mm(u.mm(s_power)))
+            dLdS = eye * (s_power_w_1.mm(u.t().mm(g.mm(u))))
             
             P = s.unsqueeze(1)
             P = P.expand(-1, P.size(0))
             P = P - P.t()
             mask_zero = torch.abs(P) == 0
             P = 1 / P
-            P[mask_zero] = 0
-            
-            dLdV = 2*(g.mm(u.mm(s_power)))
-            dLdS = s_power_w_1.mm(u.t().mm(g.mm(u)))
+            P[mask_zero] = 0            
             
             grad_input[k] = u.mm(symmetric(P.t() * u.t().mm(dLdV))+dLdS).mm(u.t())
                 
@@ -344,8 +349,8 @@ class SPDPower(nn.Module):
 
     def __init__(self, input_dim):
         super(SPDPower, self).__init__()
-        self.weight = nn.Parameter(torch.FloatTensor(input_dim), requires_grad=True)
-        nn.init.normal(self.weight)
+        self.weight = nn.Parameter(torch.ones(input_dim), requires_grad=True)
+        # nn.init.normal(self.weight)
 
     def forward(self, input):
         output = SPDPowerFunction.apply(input, self.weight)
