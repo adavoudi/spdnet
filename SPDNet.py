@@ -100,7 +100,7 @@ class SPDTransformFunction(Function):
                 P2 = weight.mm(weight.t())
                 grad_weight[k] = P2.mm(P1) - P1 
             
-            grad_weight = grad_weight.mean(0)
+            grad_weight = -grad_weight.mean(0)
 
         return grad_input, grad_weight
 
@@ -124,7 +124,7 @@ class SPDVectorizeFunction(Function):
         ctx.save_for_backward(input)
 
         output = input.new(input.size(0), input.size(1)*(input.size(1)+1)//2)
-        mask = torch.triu(torch.ones(input.size(1), input.size(2))) == 1
+        mask = np.triu_indices(input.size(1))
         for k, x in enumerate(input):
             output[k] = x[mask]
 
@@ -139,10 +139,12 @@ class SPDVectorizeFunction(Function):
         if ctx.needs_input_grad[0]:
             grad_input = input.new(len(input), input.size(1), input.size(2))
             grad_input.fill_(0)
+            mask_upper = np.triu_indices(input.size(1))
+            mask_diag = np.diag_indices(input.size(1))
             for k, g in enumerate(grad_output):
-                grad_input[k][torch.triu(torch.ones(input.size(1), input.size(2))) == 1] = g.clone()
+                grad_input[k][mask_upper] = g
                 grad_input[k] = grad_input[k] + grad_input[k].t()   
-                grad_input[k][torch.eye(input.size(1), input.size(2)) == 1] /= 2
+                grad_input[k][mask_diag] /= 2
 
         return grad_input
 
@@ -177,13 +179,20 @@ class SPDTangentSpaceFunction(Function):
         grad_input = None
 
         if ctx.needs_input_grad[0]:
+            eye = input.new(input.size(1))
+            eye.fill_(1); eye = eye.diag()
             grad_input = input.new(input.size(0), input.size(1), input.size(1))
             for k, g in enumerate(grad_output):
                 x = input[k]
                 u, s, v = x.svd()
+
+                g = symmetric(g)
                 
                 s_log_diag = s.log().diag()
                 s_inv_diag = (1/s).diag()
+                
+                dLdV = 2*(g.mm(u.mm(s_log_diag)))
+                dLdS = eye * (s_inv_diag.mm(u.t().mm(g.mm(u))))
                 
                 P = s.unsqueeze(1)
                 P = P.expand(-1, P.size(0))
@@ -192,9 +201,6 @@ class SPDTangentSpaceFunction(Function):
                 P = 1 / P
                 P[mask_zero] = 0
                 
-                dLdV = 2*(g.mm(u.mm(s_log_diag)))
-                dLdS = s_inv_diag.mm(u.t().mm(g.mm(u)))
-
                 grad_input[k] = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
 
 
@@ -236,19 +242,24 @@ class SPDRectifiedFunction(Function):
         grad_input = None
         
         if ctx.needs_input_grad[0]:
-            Q = input.new(input.size(1), input.size(1))
+            eye = input.new(input.size(1))
+            eye.fill_(1); eye = eye.diag()
             grad_input = input.new(input.size(0), input.size(1), input.size(2))
             for k, g in enumerate(grad_output):
                 if len(g.shape) == 1:
                     continue
 
+                g = symmetric(g)
+
                 x = input[k]
                 u, s, v = x.svd()
                 
                 max_mask = s > epsilon
-                s_max_diag = s; s_max_diag[~max_mask] = epsilon; s_max_diag = s_max_diag.diag()
+                s_max_diag = s.clone(); s_max_diag[~max_mask] = epsilon; s_max_diag = s_max_diag.diag()
+                Q = max_mask.diag().float()
                 
-                Q.fill_(0); Q[max_mask] = 1
+                dLdV = 2*(g.mm(u.mm(s_max_diag)))
+                dLdS = eye * (Q.mm(u.t().mm(g.mm(u))))
                 
                 P = s.unsqueeze(1)
                 P = P.expand(-1, P.size(0))
@@ -256,10 +267,7 @@ class SPDRectifiedFunction(Function):
                 mask_zero = torch.abs(P) == 0
                 P = 1 / P
                 P[mask_zero] = 0
-                
-                dLdV = 2*(g.mm(u.mm(s_max_diag)))
-                dLdS = Q.mm(u.t().mm(g.mm(u)))
-                
+
                 grad_input[k] = u.mm(symmetric(P.t() * u.t().mm(dLdV))+dLdS).mm(u.t())
             
         return grad_input, None
@@ -328,7 +336,6 @@ class SPDPowerFunction(Function):
             grad_input[k] = u.mm(symmetric(P.t() * u.t().mm(dLdV))+dLdS).mm(u.t())
                 
         grad_weight = grad_weight.mean(0)
-        # print(grad_weight)
         
         return grad_input, grad_weight
 
