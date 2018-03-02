@@ -157,6 +157,46 @@ class SPDVectorize(nn.Module):
     def forward(self, input):
         return SPDVectorizeFunction.apply(input)
 
+class SPDUnVectorizeFunction(Function):
+
+    @staticmethod
+    def forward(ctx, input):
+        ctx.save_for_backward(input)
+        n = int(-.5 + 0.5 * np.sqrt(1 + 8 * input.size(1)))
+        output = input.new(len(input), n, n)
+        output.fill_(0)
+        mask_upper = np.triu_indices(n)
+        mask_diag = np.diag_indices(n)
+        for k, x in enumerate(input):
+            output[k][mask_upper] = x
+            output[k] = output[k] + output[k].t()   
+            output[k][mask_diag] /= 2
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input = ctx.saved_variables
+        input = input[0]
+        grad_input = None
+
+        if ctx.needs_input_grad[0]:
+            n = int(-.5 + 0.5 * np.sqrt(1 + 8 * input.size(1)))
+            grad_input = input.new(len(input), input.size(1))
+            mask = np.triu_indices(n)
+            for k, g in enumerate(grad_output):
+                grad_input[k] = g[mask]
+
+        return grad_input
+
+
+class SPDUnVectorize(nn.Module):
+
+    def __init__(self):
+        super(SPDUnVectorize, self).__init__()
+
+    def forward(self, input):
+        return SPDUnVectorizeFunction.apply(input)
+
 
 class SPDTangentSpaceFunction(Function):
 
@@ -221,6 +261,70 @@ class SPDTangentSpace(nn.Module):
             output = self.vec(output)
 
         return output
+
+
+class SPDUnTangentSpaceFunction(Function):
+
+    @staticmethod
+    def forward(ctx, input):
+        ctx.save_for_backward(input)
+        
+        output = input.new(input.size(0), input.size(1), input.size(2))
+        for k, x in enumerate(input):
+            u, s, v = x.svd()
+            s.exp_()
+            output[k] = u.mm(s.diag().mm(u.t()))
+
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input = ctx.saved_variables
+        input = input[0]
+        grad_input = None
+
+        if ctx.needs_input_grad[0]:
+            eye = input.new(input.size(1))
+            eye.fill_(1); eye = eye.diag()
+            grad_input = input.new(input.size(0), input.size(1), input.size(1))
+            for k, g in enumerate(grad_output):
+                x = input[k]
+                u, s, v = x.svd()
+
+                g = symmetric(g)
+                
+                s_exp_diag = s.exp().diag()
+                
+                dLdV = 2*(g.mm(u.mm(s_exp_diag)))
+                dLdS = eye * (s_exp_diag.mm(u.t().mm(g.mm(u))))
+                
+                P = s.unsqueeze(1)
+                P = P.expand(-1, P.size(0))
+                P = P - P.t()
+                mask_zero = torch.abs(P) == 0
+                P = 1 / P
+                P[mask_zero] = 0
+                
+                grad_input[k] = u.mm(symmetric(P.t() * (u.t().mm(dLdV)))+dLdS).mm(u.t())
+
+
+        return grad_input
+
+
+class SPDUnTangentSpace(nn.Module):
+
+    def __init__(self, unvectorize=True):
+        super(SPDUnTangentSpace, self).__init__()
+        self.unvectorize = unvectorize
+        if unvectorize:
+            self.unvec = SPDUnVectorize()
+
+    def forward(self, input):
+        if self.unvectorize:
+            input = self.unvec(input)
+        output = SPDUnTangentSpaceFunction.apply(input)
+        return output
+
 
 
 class SPDRectifiedFunction(Function):
@@ -313,7 +417,7 @@ class SPDPowerFunction(Function):
                 continue
 
             x = input[k]
-            u, s, v = x.svd()
+            u, s, v = x.svd() 
 
             g = symmetric(g)
             
