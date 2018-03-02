@@ -40,9 +40,10 @@ class PolynomialKernel(nn.Module):
 
         for k, x in enumerate(input):
             if self.use_center:
-                x = x - center
-
-            P = x.mm(x.t())
+                P = x.mm(center.t())
+            else:
+                P = x.mm(x.t())
+            
             P = P.add(self.added_value)
             P = P.pow(self.degree)
             output[k] = P
@@ -73,7 +74,7 @@ class GaussianKernel(nn.Module):
             nn.init.constant(self.kernel_width, 1)
         
         if use_center:
-            self.center = nn.Parameter(torch.FloatTensor([num_input_features]), requires_grad=True)
+            self.center = nn.Parameter(torch.FloatTensor(num_input_features), requires_grad=True)
             nn.init.uniform(self.center, a=-1*center_init_scale, b=1*center_init_scale)
 
     def forward(self, input):
@@ -92,9 +93,10 @@ class GaussianKernel(nn.Module):
 
         for k, x in enumerate(input):
             if self.use_center:
-                x = x - center
+                P1 = x.mm(center.t())
+            else:
+                P1 = x.mm(x.t())
             
-            P1 = x.mm(x.t())
             P2 = P1.diag(0)
             P2 = P2.unsqueeze(1)
             P2 = P2.expand(-1, P2.size(0))
