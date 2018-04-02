@@ -22,7 +22,7 @@ class PolynomialKernel(nn.Module):
         self.use_center = use_center
 
         if use_center:
-            self.center = nn.Parameter(torch.FloatTensor([num_input_features, 1]), requires_grad=True)
+            self.center = nn.Parameter(torch.FloatTensor(num_input_features), requires_grad=True)
             nn.init.uniform(self.center, a=-1*center_init_scale, b=1*center_init_scale)
 
 
@@ -36,7 +36,8 @@ class PolynomialKernel(nn.Module):
         """
         output = input.new(input.size(0), self.num_input_features, self.num_input_features)
         if self.use_center:
-            center = self.center.expand(-1, input.size(2))
+            center = self.center.unsqueeze(1)
+            center = center.expand(-1, input.size(2))
 
         for k, x in enumerate(input):
             if self.use_center:
