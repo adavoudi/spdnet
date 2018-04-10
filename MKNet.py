@@ -105,7 +105,7 @@ class GaussianKernel(nn.Module):
             P2 = P2 - 2*P1
             if self.laplacian_kernel:
                 P2 = P2.sqrt()
-            output[k] = torch.exp(-1 * self.kernel_width*P2)
+            output[k] = torch.exp(-1 * self.kernel_width.abs()*P2)
 
         return output
  
