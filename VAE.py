@@ -13,26 +13,26 @@ from dataset import *
 from SPDNet import *
 from MKNet import *
 
-def determinant(A):
-    """
-        returns the determinant of spd matrix A
-    """
-    # try:
-    output = torch.potrf(A).diag().prod()
-    # except:
-        # print(is_pos_def(A.data))
-    return output
+# def determinant(A):
+#     """
+#         returns the determinant of spd matrix A
+#     """
+#     # try:
+#     output = torch.potrf(A).diag().prod()
+#     # except:
+#         # print(is_pos_def(A.data))
+#     return output
 
-def distance_kullback(A, B):
-    """Kullback leibler divergence between two covariance matrices A and B.
-    :param A: First covariance matrix
-    :param B: Second covariance matrix
-    :returns: Kullback leibler divergence between A and B
-    """
-    dim = A.size(0)
-    logdet = torch.log(determinant(A) / determinant(B))
-    kl = torch.mm(B.inverse(), A).trace() - dim + logdet
-    return 0.5 * kl
+# def distance_kullback(A, B):
+#     """Kullback leibler divergence between two covariance matrices A and B.
+#     :param A: First covariance matrix
+#     :param B: Second covariance matrix
+#     :returns: Kullback leibler divergence between A and B
+#     """
+#     dim = A.size(0)
+#     logdet = torch.log(determinant(A) / determinant(B))
+#     kl = torch.mm(B.inverse(), A).trace() - dim + logdet
+#     return 0.5 * kl
 
 transformed_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=True)
 dataloader = DataLoader(transformed_dataset, batch_size=30,
@@ -45,6 +45,41 @@ dataloader_val = DataLoader(transformed_dataset_val, batch_size=30,
 num_epochs = 100
 batch_size = 128
 learning_rate = 1e-3
+
+
+class KullbackDistance(nn.Module):
+
+    def __init__(self):
+        super(KullbackDistance, self).__init__()
+
+    def forward(self, A, B):
+        dim = A.size(0)
+        logdet = torch.log(torch.potrf(A).diag().prod() / torch.potrf(B).diag().prod())
+        kl = torch.mm(B.inverse(), A).trace() - dim + logdet
+        return 0.5 * kl
+
+
+class VAELoss(nn.Module):
+
+    def __init__(self, encoded_size):
+        super(VAELoss, self).__init__()
+        self.register_buffer('identity', torch.eye(encoded_size, encoded_size))
+        self.kldist = KullbackDistance()
+
+    def forward(self, recon_x, orig_x, encoded_x):
+        identity = Variable(self.identity, requires_grad=False)
+        kl_loss_reconstruction = 0
+        for index in range(recon_x.size(0)):
+            A = orig_x[index]
+            B = recon_x[index]
+            kl_loss_reconstruction -= self.kldist(A, B)
+
+        kl_loss_encoding = 0
+        for index in range(encoded_x.size(0)):
+            kl_loss_encoding -= self.kldist(encoded_x[index], identity)
+        
+        loss = kl_loss_encoding + kl_loss_reconstruction
+        return loss
 
 class VAE(nn.Module):
     def __init__(self):
@@ -75,14 +110,15 @@ class VAE(nn.Module):
 
     def decode(self, x):
         x = self.dec_trans1(x)
-        print('1:', is_pos_def(x[0].data))
+        # print('1:', is_pos_def(x[0].data))
         x = self.dec_rec1(x)
         x = self.dec_trans2(x)
-        print('2:', is_pos_def(x[0].data))
+        # print('2:', is_pos_def(x[0].data))
         x = self.dec_rec2(x)
         x = self.dec_trans3(x)
-        print('3:', is_pos_def(x[0].data))
+        # print('3:', is_pos_def(x[0].data))
         x = self.dec_rec3(x)
+        # print('4:', is_pos_def(x[0].data))
 
         return x
 
@@ -94,28 +130,30 @@ class VAE(nn.Module):
 model = VAE()
 # model.load_state_dict(torch.load('./vae.pth'))
 
-optimizer = torch.optim.Adam(model.parameters())
+optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad])
 optimizer = StiefelMetaOptimizer(optimizer)
 
-def loss_function(recon_x, orig_x, encoded_x):
 
-    identity = Variable(torch.eye(encoded_x.size(1),encoded_x.size(1)), requires_grad=False)
 
-    kl_loss_reconstruction = 0
-    for index in range(recon_x.size(0)):
-        A = orig_x[index]
-        B = recon_x[index]
-        # print('A:', is_pos_def(A.data))
-        # print('B:', is_pos_def(B.data))
-        kl_loss_reconstruction -= distance_kullback(A, B)
+# def loss_function(recon_x, orig_x, encoded_x):
 
-    kl_loss_encoding = 0
-    for index in range(encoded_x.size(0)):
-        kl_loss_encoding -= distance_kullback(encoded_x[index], identity)
+#     identity = Variable(torch.eye(encoded_x.size(1),encoded_x.size(1)), requires_grad=False)
+
+#     kl_loss_reconstruction = 0
+#     for index in range(recon_x.size(0)):
+#         A = orig_x[index]
+#         B = recon_x[index]
+#         # print('A:', is_pos_def(A.data))
+#         # print('B:', is_pos_def(B.data))
+#         kl_loss_reconstruction -= distance_kullback(A, B)
+
+#     kl_loss_encoding = 0
+#     # for index in range(encoded_x.size(0)):
+#     #     kl_loss_encoding -= distance_kullback(encoded_x[index], identity)
     
-    loss = kl_loss_encoding + kl_loss_reconstruction
+#     loss = kl_loss_encoding + kl_loss_reconstruction
     
-    return loss
+#     return loss
 
 try:
     for epoch in range(num_epochs):
@@ -126,7 +164,8 @@ try:
             # targets = Variable(data['label']).squeeze()
             
             dec, enc = model(inputs)
-            loss = loss_function(dec, inputs, enc)
+            loss_func = VAELoss(enc.size(1))
+            loss = loss_func(dec, inputs, enc)
             
             optimizer.zero_grad()
             loss.backward()

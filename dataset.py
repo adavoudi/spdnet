@@ -71,8 +71,7 @@ class AfewDataset(Dataset):
         data_path = os.path.join(self.base_path, self.spd_path[index])
         data = loadmat(data_path)
         data = data['Y1']
-        label = np.asarray(self.labels[index] - 1).astype(np.long)
+        label = np.asarray([self.labels[index] - 1]).astype(np.long)
 
         sample = {'data': torch.from_numpy(data), 'label': torch.from_numpy(label)}
-
         return sample

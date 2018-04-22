@@ -19,7 +19,7 @@ def is_nan_or_inf(A):
 
 
 def is_pos_def(x):
-    x = x.cpu().detach().numpy()
+    x = x.cpu().numpy()
     return np.all(np.linalg.eigvals(x) > 0)
 
 
@@ -109,12 +109,58 @@ class SPDTransform(nn.Module):
 
     def __init__(self, input_size, output_size):
         super(SPDTransform, self).__init__()
-        self.output_size = output_size
+        self.increase_dim = None
+        if output_size > input_size:
+            self.increase_dim = SPDIncreaseDim(input_size, output_size)
+            input_size = output_size
         self.weight = StiefelParameter(torch.FloatTensor(input_size, output_size), requires_grad=True)
         nn.init.orthogonal(self.weight)
 
     def forward(self, input):
-        return SPDTransformFunction.apply(input, self.weight)
+        output = input
+        if self.increase_dim:
+            output = self.increase_dim(output)
+        return SPDTransformFunction.apply(output, self.weight)
+
+class SPDIncreaseDimFunction(Function):
+
+    @staticmethod
+    def forward(ctx, input, eye, add):
+        ctx.save_for_backward(input, eye)
+
+        output = input.new(input.size(0), add.size(0), add.size(0))
+        for k, x in enumerate(input):
+            output[k] = eye.mm(x).mm(eye.transpose(0,1)) + add
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, eye = ctx.saved_variables
+        grad_input = None
+        
+        if ctx.needs_input_grad[0]:
+            grad_input = input.new(input.size(0), input.size(1), input.size(2))
+            for k, g in enumerate(grad_output):
+                if len(g.shape) == 1:
+                    continue
+                grad_input[k] = eye.transpose(0,1).mm(g).mm(eye)
+            
+        return grad_input, None
+
+
+class SPDIncreaseDim(nn.Module):
+
+    def __init__(self, input_size, output_size):
+        super(SPDIncreaseDim, self).__init__()
+        self.register_buffer('eye', torch.eye(output_size, input_size))
+        a = np.asarray([0] * input_size + [1] * (output_size-input_size), dtype=np.float32)
+        self.register_buffer('add', torch.from_numpy(np.diag(a)))
+
+    def forward(self, input):
+        eye = Variable(self.eye, requires_grad=False)
+        add = Variable(self.add, requires_grad=False)
+        output = SPDIncreaseDimFunction.apply(input, eye, add)
+        return output
 
 
 class SPDVectorizeFunction(Function):
