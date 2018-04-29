@@ -14,11 +14,11 @@ from dataset import *
 from SPDNet import *
 from MKNet import *
 
-transformed_dataset = AfewDataset('/home/alireza/projects/TF_SPDNet/data/AFEW', '/home/alireza/projects/SPDNet/data/afew/spddb_afew_train_spd400_int_histeq.mat', train=True)
+transformed_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=True)
 dataloader = DataLoader(transformed_dataset, batch_size=30,
                     shuffle=True, num_workers=4)
 
-transformed_dataset_val = AfewDataset('/home/alireza/projects/TF_SPDNet/data/AFEW', '/home/alireza/projects/SPDNet/data/afew/spddb_afew_train_spd400_int_histeq.mat', train=False)
+transformed_dataset_val = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=False)
 dataloader_val = DataLoader(transformed_dataset_val, batch_size=30,
                     shuffle=False, num_workers=4)
 
@@ -30,55 +30,53 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
 
-        self.trans1 = SPDTransform(400, 50)
-        # self.trans2 = SPDTransform(200, 100)
-        # self.trans3 = SPDTransform(100, 20)
-        # self.rec1 = SPDRectified()
-        # self.rec2 = SPDRectified()
-        self.tangent = SPDTangentSpace(True) 
-        self.bn =  nn.BatchNorm1d(1275)
-        # self.bn0 =  nn.BatchNorm1d(1275)
-        self.fc21 = nn.Linear(1275, 40, bias=True)
-        self.fc22 = nn.Linear(1275, 40, bias=True)
-        self.fc3 = nn.Linear(40, 400)
-        self.fc4 = nn.Linear(400, 1275)
-        self.fc5 = nn.Linear(1275, 80200)
-        self.linear = nn.Linear(1275, 7, bias=True)
+        self.enc_trans1 = SPDTransform(400, 200)
+        self.enc_trans2 = SPDTransform(200, 100)
+        self.enc_trans3 = SPDTransform(100, 50)
+        self.enc_rec1 = SPDRectified()
+        self.enc_rec2 = SPDRectified()
+        self.enc_rec3 = SPDRectified()
+
+        self.dec_trans1 = SPDTransform(50, 100)
+        self.dec_trans2 = SPDTransform(100, 200)
+        self.dec_trans3 = SPDTransform(200, 400)
+        self.dec_rec1 = SPDRectified()
+        self.dec_rec2 = SPDRectified()
+        self.dec_rec3 = SPDRectified()
 
     def encode(self, x):
-        x = self.trans1(x)
-        # x = self.rec1(x)
-        # x = self.trans2(x)
-        # x = self.rec2(x)
-        # x = self.trans3(x)
-        x = self.tangent(x)
-        x = self.bn(x)
-        return self.fc21(x), self.fc22(x), x
+        x = self.enc_trans1(x)
+        x = self.enc_rec1(x)
+        x = self.enc_trans2(x)
+        x = self.enc_rec2(x)
+        x = self.enc_trans3(x)
+        x = self.enc_rec3(x)
+        return x
 
-    def reparametrize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        eps = torch.FloatTensor(std.size()).normal_()
-        eps = Variable(eps)
-        return eps.mul(std).add_(mu)
-
-    def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        h4 = F.relu(self.fc4(h3))
-        return self.fc5(h4)
+    def decode(self, x):
+        x = self.dec_trans1(x)
+        x = self.dec_rec1(x)
+        x = self.dec_trans2(x)
+        x = self.dec_rec2(x)
+        x = self.dec_trans3(x)
+        x = self.dec_rec3(x)
+        return x
 
     def forward(self, x):
-        mu, logvar, clsi = self.encode(x)
-        z = self.reparametrize(mu, logvar)
-        return self.decode(z), mu, logvar, clsi
+        enc = self.encode(x)
+        # dec = self.decode(enc)
+        return enc
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.linear = nn.Linear(1275, 7, bias=True)
+        self.tangent = SPDTangentSpace(True)
+        self.linear = nn.Linear(1275, 7, bias=False)
         self.dropout = nn.Dropout(p=0.5)
         
     def forward(self, x):
-        # x = self.dropout(x)
+        x = self.tangent(x)
+        x = self.dropout(x)
         x = self.linear(x)
         return x
 
@@ -147,7 +145,7 @@ def train(epoch):
         targets = Variable(sample_batched['label']).squeeze()
 
         optimizer.zero_grad()
-        _,_,out = model.encode(inputs)
+        out = model.encode(inputs)
         outputs = model2(out)
         loss = criterion(outputs, targets)
         loss.backward()
@@ -174,7 +172,7 @@ def test(epoch):
         inputs = Variable(sample_batched['data'])
         targets = Variable(sample_batched['label']).squeeze()
 
-        _,_,out = model.encode(inputs)
+        out = model.encode(inputs)
         outputs = model2(out)
         loss = criterion(outputs, targets)
 

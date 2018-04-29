@@ -145,7 +145,7 @@ class SPDIncreaseDimFunction(Function):
                     continue
                 grad_input[k] = eye.transpose(0,1).mm(g).mm(eye)
             
-        return grad_input, None
+        return grad_input, None, None
 
 
 class SPDIncreaseDim(nn.Module):
