@@ -271,7 +271,7 @@ class SPDTangentSpaceFunction(Function):
             for k, g in enumerate(grad_output):
                 x = input[k]
                 u, s, v = x.svd()
-
+                
                 g = symmetric(g)
                 
                 s_log_diag = s.log().diag()
@@ -382,7 +382,7 @@ class SPDRectifiedFunction(Function):
         output = input.new(input.size(0), input.size(1), input.size(2))
         for k, x in enumerate(input):
             u, s, v = x.svd()
-            s[s < epsilon].fill_(epsilon[0])
+            s[s < epsilon[0]] = epsilon[0]
             output[k] = u.mm(s.diag().mm(u.t()))
         return output
 
