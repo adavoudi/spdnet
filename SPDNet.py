@@ -45,6 +45,18 @@ class StiefelMetaOptimizer(object):
     def zero_grad(self):
         return self.optimizer.zero_grad()
 
+    @staticmethod
+    def retraction(data):
+        Q, R = data.qr()
+        sign = (R.diag().sign() + 0.5).sign().diag()
+        out_data = Q.mm(sign)
+        return out_data
+
+    @staticmethod
+    def projection(weight, grad):
+        out_grad = grad - weight.mm(symmetric(weight.transpose(0,1).mm(grad)))
+        return out_grad
+
     def step(self, closure=None):
         """Performs a single optimization step.
 
@@ -52,15 +64,22 @@ class StiefelMetaOptimizer(object):
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
-        loss = self.optimizer.step(closure)
+
         for group in self.optimizer.param_groups:
             for p in group['params']:
                 if p.grad is None:
                     continue
-
                 if isinstance(p, StiefelParameter):
-                    Q, R = p.data.qr()
-                    p.data = Q.clone()
+                    p.grad.data = StiefelMetaOptimizer.projection(p.data, p.grad.data).clone()
+
+        loss = self.optimizer.step(closure)
+
+        for group in self.optimizer.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                if isinstance(p, StiefelParameter):
+                    p.data = StiefelMetaOptimizer.retraction(p.data).clone()
 
         return loss
    
@@ -96,9 +115,7 @@ class SPDTransformFunction(Function):
                 g = grad_output[k]
                 if len(g.shape) == 1:
                     continue
-                P1 = 2 * x.mm(weight.mm(g))
-                P2 = weight.mm(weight.t())
-                grad_weight[k] = P1 - P2.mm(P1)  
+                grad_weight[k] = 2 * x.mm(weight.mm(g))  
             
             grad_weight = grad_weight.mean(0)
 

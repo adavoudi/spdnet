@@ -83,9 +83,15 @@ def check_Transform():
     ], np.float32))
 
     desired_backward_weight = torch.from_numpy(np.asarray([
-        [0.3814,-0.8837,-0.4667],
-        [-0.8837,2.0474,1.0814],
-        [-0.4667,1.0814,0.5712]
+        [0.8207,0.8207,0.8207],
+        [-11.4424,-11.4424,-11.4424],
+        [-6.2772,-6.2772,-6.2772]
+    ], np.float32))
+
+    desired_weight = torch.from_numpy(np.asarray([
+        [0.6787,0.7195,0.1471],
+        [-0.6016,0.6596,-0.4505],
+        [-0.4211,0.2173,0.8806]
     ], np.float32))
 
     weight = torch.from_numpy(np.asarray([
@@ -98,12 +104,32 @@ def check_Transform():
     backward = SPDTransformFunction.backward(CTX([spd, weight], [True, True]), grad_mat)
     forward_eq = assertTensorEqual(forward, desired_forward, tolerance=1e-3)
     backward_eq_1 = assertTensorEqual(backward[0], desired_backward_net, tolerance=1e-3)
-    backward_eq_2 = assertTensorEqual(backward[1], desired_backward_weight, tolerance=1e-3)
+    backward_eq_2 = assertTensorEqual(backward[1], desired_backward_weight, tolerance=1e-4)
 
-    new_weight = weight - backward[1]
-    Q, R = new_weight.qr()
-    print(Q)
+    grad = StiefelMetaOptimizer.projection(weight, backward[1])
+    new_weight = StiefelMetaOptimizer.retraction(weight - grad)
 
-    return (forward_eq and backward_eq_1 and backward_eq_2)
+    weight_eq = assertTensorEqual(new_weight, desired_weight, tolerance=1e-4)
 
-print(check_Transform())
+    return (forward_eq and backward_eq_1 and backward_eq_2 and weight_eq)
+
+
+units = {
+    'Tangent space layer': check_TangentSpace,
+    'Rectification layer': check_Rectified,
+    'Transformation layer': check_Transform
+}
+
+result = True
+
+print('Performing unit test ...')
+for index, (name, func) in enumerate(units.items()):
+    current_result = func()
+    result = result and current_result
+    print('[%d/%d] %s : %s' % (index+1, len(units), name, current_result))
+
+
+if result:
+    print('All tests past')
+else:
+    print('test failed')
