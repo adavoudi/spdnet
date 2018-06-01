@@ -34,17 +34,21 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.base = BaseNet()
         self.linear = nn.Linear(1275, 7, bias=False)
+        # self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, x):
         x = self.base(x)
+        # x = self.dropout(x)
         x = self.linear(x)
         return x
 
 transformed_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=True)
-dataloader = DataLoader(transformed_dataset, batch_size=30,
+# transformed_dataset = AfewDatasetAugmented(train=True)
+dataloader = DataLoader(transformed_dataset, batch_size=2,
                     shuffle=True, num_workers=4)
 
 transformed_dataset_val = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=False)
+# transformed_dataset_val = AfewDatasetAugmented(train=False)
 dataloader_val = DataLoader(transformed_dataset_val, batch_size=30,
                     shuffle=False, num_workers=4)
 
@@ -73,23 +77,23 @@ def test_net():
             return False
     return True
 
-print('Test result: ', test_net())
+# print('Test result: ', test_net())
 
 model = Net()
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam([
-                {'params': model.base.parameters(), 'lr': 1e-4},
-                {'params': model.linear.parameters(), 'lr': 1e-7}
-            ], weight_decay=0.0005)
+# optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+# optimizer = torch.optim.Adadelta(model.parameters())
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 optimizer = StiefelMetaOptimizer(optimizer)
+# optimizer = Adadelta(model.parameters())
 
 # Training
 def train(epoch):
     print('\nEpoch: %d' % epoch)
     model.train()
     train_loss = 0
-    correct = 0
-    total = 0
+    correct = 0.0
+    total = 0.0
     bar = tqdm(enumerate(dataloader))
     for batch_idx, sample_batched in bar:
         inputs = Variable(sample_batched['data'])
@@ -104,7 +108,7 @@ def train(epoch):
         train_loss += loss.data.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
-        correct += predicted.eq(targets.data).cpu().sum()
+        correct += predicted.eq(targets.data).cpu().sum().data.item()
 
         bar.set_description('Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (train_loss/(batch_idx+1.0), 100.*correct/total, correct, total))
@@ -116,8 +120,8 @@ def test(epoch):
     global best_acc
     model.eval()
     test_loss = 0
-    correct = 0
-    total = 0
+    correct = 0.0
+    total = 0.0
     bar = tqdm(enumerate(dataloader_val))
     for batch_idx, sample_batched in bar:
         inputs = Variable(sample_batched['data'])
@@ -128,7 +132,7 @@ def test(epoch):
         test_loss += loss.data.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
-        correct += predicted.eq(targets.data).cpu().sum()
+        correct += predicted.eq(targets.data).cpu().sum().data.item()
 
         bar.set_description('Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))

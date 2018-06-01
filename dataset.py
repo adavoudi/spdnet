@@ -4,6 +4,9 @@ import numpy as np
 import scipy.io as spio
 from torch.utils.data import Dataset, DataLoader
 import torch
+from SPDNet import untangent_space, symmetric, tangent_space
+from tqdm import tqdm
+from glob import glob
 
 def loadmat(filename):
     '''
@@ -40,7 +43,7 @@ def _todict(matobj):
 
 
 class AfewDataset(Dataset):
-    def __init__(self, base_path, dataset_path, shuffle=True, train=False):
+    def __init__(self, base_path, dataset_path, shuffle=True, train=False, augmentation=False):
         super(AfewDataset, self).__init__()
 
         self.train = train
@@ -60,9 +63,11 @@ class AfewDataset(Dataset):
         if shuffle:
             random.shuffle(self.data_index)
 
-        self.nSamples = len(self.data_index) 
+        self.nSamples = 3#len(self.data_index) 
+        print(self.nSamples)
         self.nClasses = 7
-
+        self.augmentation = augmentation
+        
     def __len__(self):
         return self.nSamples
 
@@ -70,8 +75,31 @@ class AfewDataset(Dataset):
         index = self.data_index[idx]
         data_path = os.path.join(self.base_path, self.spd_path[index])
         data = loadmat(data_path)
-        data = data['Y1']
+        data = torch.from_numpy(data['Y1'])
         label = np.asarray([self.labels[index] - 1]).astype(np.long)
 
-        sample = {'data': torch.from_numpy(data), 'label': torch.from_numpy(label)}
+        sample = {'data': data, 'label': torch.from_numpy(label)}
+        return sample
+
+
+class AfewDatasetAugmented(Dataset):
+    def __init__(self, train=False, augmentation=False):
+        super(AfewDatasetAugmented, self).__init__()
+
+        self.train = train
+        if train:
+            self.base_path = './data/augmented/train'
+        else:
+            self.base_path = './data/augmented/valid'
+
+        self.paths = glob(os.path.join(self.base_path, '*.pth'))
+        
+        self.nSamples = len(self.paths) 
+        self.nClasses = 7
+        
+    def __len__(self):
+        return self.nSamples
+
+    def __getitem__(self, index):
+        sample = torch.load(self.paths[index])
         return sample
