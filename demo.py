@@ -18,7 +18,7 @@ class BaseNet(nn.Module):
         self.trans3 = SPDTransform(100, 50)
         self.rect1  = SPDRectified()
         self.rect2  = SPDRectified()
-        self.tangent = SPDTangentSpace()
+        self.tangent = SPDTangentSpace(50, True)
 
     def forward(self, x):
         x = self.trans1(x)
@@ -44,7 +44,7 @@ class Net(nn.Module):
 
 transformed_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=True)
 # transformed_dataset = AfewDatasetAugmented(train=True)
-dataloader = DataLoader(transformed_dataset, batch_size=2,
+dataloader = DataLoader(transformed_dataset, batch_size=30,
                     shuffle=True, num_workers=4)
 
 transformed_dataset_val = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=False)

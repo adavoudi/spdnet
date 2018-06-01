@@ -124,44 +124,6 @@ class StiefelMetaOptimizer(object):
                     p.data.fill_(0).add_(trans)
 
         return loss
-   
-
-class SPDTransformFunction(Function):
-
-    @staticmethod
-    def forward(ctx, input, weight):
-        ctx.save_for_backward(input, weight)
-
-        output = input.new(input.size(0), weight.size(1), weight.size(1))
-        for k, x in enumerate(input):
-            output[k] = weight.t().mm(x.mm(weight))
-
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, weight = ctx.saved_variables
-        grad_input = grad_weight = None
-
-        grad_output[grad_output != grad_output] = 0
-        if ctx.needs_input_grad[0]:
-            grad_input = input.new(input.size(0), input.size(1), input.size(2))
-            for k, g in enumerate(grad_output):
-                if len(g.shape) == 1:
-                    continue
-                grad_input[k] = weight.mm(g.mm(weight.t()))
-
-        if ctx.needs_input_grad[1]:
-            grad_weight = weight.new(input.size(0), weight.size(0), weight.size(1))
-            for k, x in enumerate(input):
-                g = grad_output[k]
-                if len(g.shape) == 1:
-                    continue
-                grad_weight[k] = 2 * x.mm(weight.mm(g))  
-            
-            grad_weight = grad_weight.mean(0)
-
-        return grad_input, grad_weight
 
 
 class SPDTransform(nn.Module):
@@ -179,32 +141,11 @@ class SPDTransform(nn.Module):
         output = input
         if self.increase_dim:
             output = self.increase_dim(output)
-        return SPDTransformFunction.apply(output, self.weight)
+        weight = self.weight.unsqueeze(0)
+        weight = weight.expand(input.size(0), -1, -1)
+        output = torch.bmm(weight.transpose(1,2), torch.bmm(output, weight))
 
-class SPDIncreaseDimFunction(Function):
-
-    @staticmethod
-    def forward(ctx, input, eye, add):
-        ctx.save_for_backward(input, eye)
-
-        output = input.new(input.size(0), add.size(0), add.size(0))
-        for k, x in enumerate(input):
-            output[k] = eye.mm(x).mm(eye.transpose(0,1)) + add
         return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, eye = ctx.saved_variables
-        grad_input = None
-        
-        if ctx.needs_input_grad[0]:
-            grad_input = input.new(input.size(0), input.size(1), input.size(2))
-            for k, g in enumerate(grad_output):
-                if len(g.shape) == 1:
-                    continue
-                grad_input[k] = eye.transpose(0,1).mm(g).mm(eye)
-            
-        return grad_input, None, None
 
 
 class SPDIncreaseDim(nn.Module):
@@ -212,55 +153,31 @@ class SPDIncreaseDim(nn.Module):
     def __init__(self, input_size, output_size):
         super(SPDIncreaseDim, self).__init__()
         self.register_buffer('eye', torch.eye(output_size, input_size))
-        a = np.asarray([0] * input_size + [1] * (output_size-input_size), dtype=np.float32)
-        self.register_buffer('add', torch.from_numpy(np.diag(a)))
+        add = np.asarray([0] * input_size + [1] * (output_size-input_size), dtype=np.float32)
+        self.register_buffer('add', torch.from_numpy(np.diag(add)))
 
     def forward(self, input):
-        eye = Variable(self.eye, requires_grad=False)
-        add = Variable(self.add, requires_grad=False)
-        output = SPDIncreaseDimFunction.apply(input, eye, add)
-        return output
-
-
-class SPDVectorizeFunction(Function):
-
-    @staticmethod
-    def forward(ctx, input):
-        ctx.save_for_backward(input)
-
-        output = input.new(input.size(0), input.size(1)*(input.size(1)+1)//2)
-        mask = np.triu_indices(input.size(1))
-        for k, x in enumerate(input):
-            output[k] = x[mask]
+        eye = self.eye.unsqueeze(0)
+        eye = eye.expand(input.size(0), -1, -1)
+        add = self.add.unsqueeze(0)
+        add = add.expand(input.size(0), -1, -1)
+        
+        output = torch.baddbmm(eye, torch.bmm(input, eye.transpose(1,2)), add)
 
         return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input = ctx.saved_variables
-        input = input[0]
-        grad_input = None
-
-        if ctx.needs_input_grad[0]:
-            grad_input = input.new(len(input), input.size(1), input.size(2))
-            grad_input.fill_(0)
-            mask_upper = np.triu_indices(input.size(1))
-            mask_diag = np.diag_indices(input.size(1))
-            for k, g in enumerate(grad_output):
-                grad_input[k][mask_upper] = g
-                grad_input[k] = grad_input[k] + grad_input[k].t()   
-                grad_input[k][mask_diag] /= 2
-
-        return grad_input
 
 
 class SPDVectorize(nn.Module):
 
-    def __init__(self):
+    def __init__(self, input_size):
         super(SPDVectorize, self).__init__()
+        row_idx, col_idx = np.triu_indices(input_size)
+        self.register_buffer('row_idx', torch.LongTensor(row_idx))
+        self.register_buffer('col_idx', torch.LongTensor(col_idx))
 
     def forward(self, input):
-        return SPDVectorizeFunction.apply(input)
+        output = input[:, self.row_idx, self.col_idx]
+        return output
 
 class SPDUnVectorizeFunction(Function):
 
@@ -354,11 +271,11 @@ class SPDTangentSpaceFunction(Function):
 
 class SPDTangentSpace(nn.Module):
 
-    def __init__(self, vectorize=True):
+    def __init__(self, input_size, vectorize=True):
         super(SPDTangentSpace, self).__init__()
         self.vectorize = vectorize
         if vectorize:
-            self.vec = SPDVectorize()
+            self.vec = SPDVectorize(input_size)
 
     def forward(self, input):
         output = SPDTangentSpaceFunction.apply(input)
