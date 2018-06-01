@@ -4,27 +4,13 @@ from torch.autograd import Variable, Function
 
 import numpy as np
 
-def is_nan_or_inf(A):
-    C1 = torch.nonzero(A == float('inf'))
-    C2 = torch.nonzero(A != A)
-    if len(C1.size()) > 0 or len(C2.size()) > 0:
-        return True
-    return False
-
 class PolynomialKernel(nn.Module):
 
-    def __init__(self, num_input_features, use_center=False, degree=1, added_value=0, center_init_scale=1):
+    def __init__(self, degree=1, added_value=1):
         super(PolynomialKernel, self).__init__()
         
         self.degree = degree
         self.added_value = added_value
-        self.num_input_features = num_input_features
-        self.use_center = use_center
-
-        if use_center:
-            self.center = nn.Parameter(torch.FloatTensor(num_input_features), requires_grad=True)
-            nn.init.uniform(self.center, a=-1*center_init_scale, b=1*center_init_scale)
-
 
     def forward(self, input):
         """
@@ -34,27 +20,17 @@ class PolynomialKernel(nn.Module):
         Returns:
             [Tensor] -- :math:`N` SPD matrices of size :math:`(C, C)`, i.e. :math:`(N, C, C)`
         """
-        output = input.new(input.size(0), self.num_input_features, self.num_input_features)
-        if self.use_center:
-            center = self.center.unsqueeze(1)
-            center = center.expand(-1, input.size(2))
 
-        for k, x in enumerate(input):
-            if self.use_center:
-                P = x.mm(center.t())
-            else:
-                P = x.mm(x.t())
-            
-            P = P.add(self.added_value)
-            P = P.pow(self.degree)
-            output[k] = P
+        output = torch.bmm(input, input.transpose(1,2))
+        output.add_(self.added_value)
+        output.pow_(self.degree)
 
         return output
 
 
 class GaussianKernel(nn.Module):
 
-    def __init__(self, num_input_features, use_center=False, kernel_width=None, laplacian_kernel=False, center_init_scale=1):
+    def __init__(self, in_channels, kernel_width=None, laplacian_kernel=False):
         """
         Arguments:
             kernel_width {float} -- -0.5/sigma^2 if 
@@ -65,18 +41,16 @@ class GaussianKernel(nn.Module):
 
         super(GaussianKernel, self).__init__()
 
-        self.num_input_features = num_input_features
-        self.use_center = use_center
         self.kernel_width = kernel_width
         self.laplacian_kernel = laplacian_kernel
-        
-        if kernel_width is None:
+        self.in_channels = in_channels
+
+        self.register_buffer('diag_idx', torch.LongTensor([t for t in range(self.in_channels)]))
+    
+        self.var_kernel = kernel_width is None
+        if self.var_kernel:
             self.kernel_width = nn.Parameter(torch.FloatTensor([1]), requires_grad=True)
             nn.init.constant(self.kernel_width, 1)
-        
-        if use_center:
-            self.center = nn.Parameter(torch.FloatTensor(num_input_features), requires_grad=True)
-            nn.init.uniform(self.center, a=-1*center_init_scale, b=1*center_init_scale)
 
     def forward(self, input):
         """
@@ -87,27 +61,18 @@ class GaussianKernel(nn.Module):
             [Tensor] -- :math:`N` SPD matrices of size :math:`(C, C)`, i.e. :math:`(N, C, C)`
         """
 
-        output = input.new(input.size(0), self.num_input_features, self.num_input_features)
-        if self.use_center:
-            center = self.center.unsqueeze(1)
-            center = center.expand(-1, input.size(2))
-
-        for k, x in enumerate(input):
-            if self.use_center:
-                P1 = x.mm(center.t())
-            else:
-                P1 = x.mm(x.t())
-            
-            P2 = P1.diag(0)
-            P2 = P2.unsqueeze(1)
-            P2 = P2.expand(-1, P2.size(0))
-            P2 = P2 + P2.t()
-            P2 = P2 - 2*P1
-            if self.laplacian_kernel:
-                P2 = P2.sqrt()
-            output[k] = torch.exp(-1 * self.kernel_width.abs()*P2)
-
-        return output
+        kernel_width = self.kernel_width.abs() if self.var_kernel else self.kernel_width
+        P1 = torch.bmm(input, input.transpose(1,2))
+        P2 = P1[:, self.diag_idx, self.diag_idx]
+        P2 = P2.unsqueeze(2).expand(-1, -1, input.size(1))
+        P2.add_(P2.transpose(1,2))
+        P2.add_(-2 * P1)
+        if self.laplacian_kernel:
+            P2.sqrt_()
+        P2.mul_(-1* kernel_width)
+        P2.exp_()
+        
+        return P2
  
 
 class MixKernel(nn.Module):
@@ -134,19 +99,12 @@ class MixKernel(nn.Module):
             [Tensor] -- :math:`N` SPD matrices of size :math:`(C, C)`, i.e. :math:`(N, C, C)`
         """
 
-        output = input1.new(input1.size(0), input1.size(1), input1.size(1))
+        weight_a = self.weight_a if self.use_weight_for_a else 1
+        weight_b = self.weight_b if self.use_weight_for_b else 1
 
-        for k in range(input1.size(0)):
-            x1 = input1[k]
-            x2 = input2[k]
-            if self.use_weight_for_a:
-                x1 = x1 * self.weight_a
-            if self.use_weight_for_b:
-                x2 = x2 * self.weight_b
-
-            if self.is_product:
-                output[k] = x1 * x2
-            else:
-                output[k] = x1 + x2
+        if self.is_product:
+            output = weight_a * weight_b * input1 * input2
+        else:
+            output = weight_a * input1 + weight_b * input2
 
         return output
