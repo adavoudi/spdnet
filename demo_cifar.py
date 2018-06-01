@@ -35,16 +35,18 @@ class BasicBlock(nn.Module):
         return out
 
 
-class CifarNet_1_Base(nn.Module):
+class CifarNet(nn.Module):
     def __init__(self):
-        super(CifarNet_1_Base, self).__init__()
+        super(CifarNet, self).__init__()
         self.block_1 = BasicBlock(3, 16, 2) # 16
         self.block_2 = BasicBlock(16, 16, 1) # 16
         self.block_3 = BasicBlock(16, 16, 1) # 16
         self.block_4 = BasicBlock(16, 32, 2) # 8
         self.block_5 = BasicBlock(32, 32, 1) # 8
-        self.block_6 = BasicBlock(32, 64, 2, bn=False, relu=False) # 4
-        self.linear = nn.Linear(1024, 10, bias=False)
+        self.block_6 = BasicBlock(32, 64, 2, bn=False, relu=False)
+        self.gkernel = Covariance()#GaussianKernel(64, kernel_width=0.1, laplacian_kernel=False)
+        self.vec = SPDVectorize(65)
+        self.linear = nn.Linear(2145, 10, bias=True)
 
     def forward(self, input, out_conv=False):
         
@@ -54,44 +56,16 @@ class CifarNet_1_Base(nn.Module):
         out = self.block_4(out)
         out = self.block_5(out)
         out = self.block_6(out)
-
-        if not out_conv:
-            out = out.view(out.size(0), -1)
-            out = self.linear(out)
-        else:
-            out = out.view(out.size(0), out.size(1), -1)
-
-        return out
-
-
-class CifarNet_1(nn.Module):
-    def __init__(self):
-        super(CifarNet_1, self).__init__()
-        self.gkernel_1 = GaussianKernel(64, use_center=False, kernel_width=0.1, laplacian_kernel=False, center_init_scale=1)
-        # self.gkernel_2 = GaussianKernel(64, use_center=False, kernel_width=None, laplacian_kernel=False, center_init_scale=3)
-        # self.mix = MixKernel(use_weight_for_a=True, use_weight_for_b=True)
-        self.trans = SPDTransform(64, 20)
-        self.rect = SPDRectified()
-        self.tangent = SPDTangentSpace() 
-        self.linear = nn.Linear(210, 10, bias=True)
-        self.dropout = nn.Dropout(p=0.3)
-
-    def forward(self, input):
-        
-        out = self.gkernel_1(input)
-        # out2 = self.gkernel_2(input)
-        # out = self.mix(out1, out2)
-        out = self.trans(out)
-        out = self.rect(out)
-        out = self.tangent(out)
-        # out = self.dropout(out)
+        out = out.view(out.size(0), out.size(1), -1)
+        out = self.gkernel(out)
+        out = self.vec(out) 
         out = self.linear(out)
-
+        
         return out
 
 
-spdnet = CifarNet_1()
-model_base = CifarNet_1_Base()
+
+net = CifarNet()
 
 transform_train = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -118,78 +92,59 @@ start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 use_cuda = True
 
 if use_cuda:
-    model_base = model_base.cuda()
+    net = net.cuda()
 
 criterion = nn.CrossEntropyLoss()
 
-optimizer_base = optim.Adam(model_base.parameters(), lr=0.01)
-optimizer_spdnet = optim.Adam(list(spdnet.parameters())+list(model_base.parameters()), lr=0.0001)
-optimizer_spdnet = StiefelMetaOptimizer(optimizer_spdnet)
+optimizer = optim.Adam(net.parameters(), lr=0.001)
+# optimizer_spdnet = optim.Adam(list(spdnet.parameters())+list(model_base.parameters()), lr=0.0001)
+# optimizer_spdnet = StiefelMetaOptimizer(optimizer_spdnet)
 
 # Training
-def train(epoch, train_spdnet=False):
+def train(epoch):
     print('\nEpoch: %d' % epoch)
-    spdnet.train()
-    model_base.train()
+    net.train()
     train_loss = 0
-    correct = 0
-    total = 0
+    correct = 0.0
+    total = 0.0
     bar = tqdm(enumerate(trainloader))
     for batch_idx, (inputs, targets) in bar:
         if use_cuda:
-            inputs, targets = inputs.cuda(), targets
+            inputs, targets = inputs.cuda(), targets.cuda()
         
-        inputs, targets = Variable(inputs), Variable(targets)
-
-        # if train_spdnet:
-        optimizer_base.zero_grad()
-        optimizer_spdnet.zero_grad()
-        outputs = model_base(inputs, True)
-        outputs = spdnet(outputs.cpu())
+        optimizer.zero_grad()
+        outputs = net(inputs)
         loss = criterion(outputs, targets)        
         loss.backward()
-        optimizer_spdnet.step()
-        optimizer_base.step()
-        # else:
-        #     outputs = model_base(inputs)
-        #     loss = criterion(outputs, targets)        
-        #     loss.backward()
+        optimizer.step()
 
-
-        train_loss += loss.data[0]
+        train_loss += loss.data.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
-        correct += predicted.eq(targets.data).cpu().sum()
+        correct += predicted.eq(targets.data).cpu().sum().data.item()
 
         bar.set_description('Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
 
-def test(epoch, test_spdnet=False):
+def test(epoch):
     global best_acc
-    model_base.eval()
-    spdnet.eval()
-    test_loss = 0
-    correct = 0
-    total = 0
+    net.eval()
+    test_loss = 0.0
+    correct = 0.0
+    total = 0.0
     bar = tqdm(enumerate(testloader))
     for batch_idx, (inputs, targets) in bar:
         if use_cuda:
-            inputs, targets = inputs.cuda(), targets
-        inputs, targets = Variable(inputs, volatile=True), Variable(targets)
+            inputs, targets = inputs.cuda(), targets.cuda()
         
-        # if test_spdnet:
-        outputs = model_base(inputs, True)
-        outputs = spdnet(outputs.cpu())
-        # else:
-            # outputs = model_base(inputs, False)
-
+        outputs = net(inputs)
         loss = criterion(outputs, targets)
 
-        test_loss += loss.data[0]
+        test_loss += loss.data.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
-        correct += predicted.eq(targets.data).cpu().sum()
+        correct += predicted.eq(targets.data).cpu().sum().data.item()
 
         bar.set_description('Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
@@ -209,13 +164,6 @@ def test(epoch, test_spdnet=False):
     #     torch.save(state, './checkpoint/kspd-ckpt.t7')
     #     best_acc = acc
 
-
-# for epoch in range(2):
-#     train(epoch)
-#     test(epoch)
-
-# print('Training SPDNet ... ')
-
-for epoch in range(20):
-    train(epoch, True)
-    test(epoch, True)
+for epoch in range(200):
+    train(epoch)
+    test(epoch)
