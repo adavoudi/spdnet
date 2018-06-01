@@ -63,7 +63,7 @@ class AfewDataset(Dataset):
         if shuffle:
             random.shuffle(self.data_index)
 
-        self.nSamples = 3#len(self.data_index) 
+        self.nSamples = len(self.data_index) 
         print(self.nSamples)
         self.nClasses = 7
         self.augmentation = augmentation
