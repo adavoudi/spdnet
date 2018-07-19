@@ -106,8 +106,8 @@ def check_Transform():
     backward_eq_1 = assertTensorEqual(backward[0], desired_backward_net, tolerance=1e-3)
     backward_eq_2 = assertTensorEqual(backward[1], desired_backward_weight, tolerance=1e-4)
 
-    grad = StiefelMetaOptimizer.projection(weight, backward[1])
-    new_weight = StiefelMetaOptimizer.retraction(weight - grad)
+    grad = orthogonal_projection(backward[1], weight)
+    new_weight = retraction(weight, -grad)
 
     weight_eq = assertTensorEqual(new_weight, desired_weight, tolerance=1e-4)
 

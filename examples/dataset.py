@@ -2,9 +2,10 @@ import os
 import random
 import numpy as np
 import scipy.io as spio
-from torch.utils.data import Dataset, DataLoader
+
 import torch
-from SPDNet import untangent_space, symmetric, tangent_space
+from torch.utils.data import Dataset, DataLoader
+
 from tqdm import tqdm
 from glob import glob
 

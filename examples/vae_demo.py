@@ -30,9 +30,9 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
 
-        self.trans1 = SPDTransform(400, 50)
-        # self.trans2 = SPDTransform(200, 100)
-        # self.trans3 = SPDTransform(100, 20)
+        self.trans1 = SPDTransform(400, 200)
+        self.trans2 = SPDTransform(200, 100)
+        self.trans3 = SPDTransform(100, 50)
         # self.rec1 = SPDRectified()
         # self.rec2 = SPDRectified()
         self.tangent = SPDTangentSpace(True) 

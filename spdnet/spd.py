@@ -2,128 +2,10 @@ import torch
 from torch import nn
 from torch.optim.optimizer import Optimizer
 from torch.autograd import Variable, Function
-
 import numpy as np
 
-
-def symmetric(A):
-    return 0.5 * (A + A.t())
-
-def is_nan_or_inf(A):
-    C1 = torch.nonzero(A == float('inf'))
-    C2 = torch.nonzero(A != A)
-    if len(C1.size()) > 0 or len(C2.size()) > 0:
-        return True
-    return False
-
-def is_pos_def(x):
-    x = x.cpu().numpy()
-    return np.all(np.linalg.eigvals(x) > 0)
-
-def matrix_operator(A, operator):
-    u, s, v = A.svd()
-    if operator == 'sqrtm':
-        s.sqrt_()
-    elif operator == 'rsqrtm':
-        s.rsqrt_()
-    elif operator == 'logm':
-        s.log_()
-    elif operator == 'expm':
-        s.exp_()
-    else:
-        raise('operator %s is not implemented' % operator)
-    
-    output = u.mm(s.diag().mm(u.t()))
-    
-    return output
-
-def tangent_space(A, ref, inverse_transform=False):
-    ref_sqrt = matrix_operator(ref, 'sqrtm')
-    ref_sqrt_inv = matrix_operator(ref, 'rsqrtm')
-    middle = ref_sqrt_inv.mm(A.mm(ref_sqrt_inv))
-    if inverse_transform:
-        middle = matrix_operator(middle, 'logm')
-    else:
-        middle = matrix_operator(middle, 'expm')
-    out = ref_sqrt.mm(middle.mm(ref_sqrt))
-    return out
-
-def untangent_space(A, ref):
-    return tangent_space(A, ref, True)
-
-def parallel_transform(A, ref1, ref2):
-    print(A.size(), ref1.size(), ref2.size())
-    out = untangent_space(A, ref1)
-    out = tangent_space(out, ref2)
-    return out
-
-def orthogonal_projection(A, B):
-    out = A - B.mm(symmetric(B.transpose(0,1).mm(A)))
-    return out
-
-def retraction(A, ref):
-    data = A + ref
-    Q, R = data.qr()
-    sign = (R.diag().sign() + 0.5).sign().diag()
-    out = Q.mm(sign)
-    return out
-
-class StiefelParameter(nn.Parameter):
-    """A kind of Variable that is to be considered a module parameter on the space of 
-        Stiefel manifold.
-    """
-    def __new__(cls, data=None, requires_grad=True):
-        return super(StiefelParameter, cls).__new__(cls, data, requires_grad=requires_grad)
-
-    def __repr__(self):
-        return 'Parameter containing:' + self.data.__repr__()
-
-
-class StiefelMetaOptimizer(object):
-    """This is a meta optimizer which uses other optimizers for updating parameters
-        and remap all StiefelParameter parameters to Stiefel space after they have been updated.
-    """
-
-    def __init__(self, optimizer):
-        self.optimizer = optimizer
-        self.state = {}
-
-    def zero_grad(self):
-        return self.optimizer.zero_grad()
-
-    def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-
-        for group in self.optimizer.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                if isinstance(p, StiefelParameter):
-                    if id(p) not in self.state:
-                        self.state[id(p)] = p.data.clone()
-                    else:
-                        self.state[id(p)].fill_(0).add_(p.data)
-                    
-                    p.data.fill_(0)
-                    trans = orthogonal_projection(p.grad.data, p.data)
-                    p.grad.data.fill_(0).add_(trans)
-                    
-        loss = self.optimizer.step(closure)
-
-        for group in self.optimizer.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                if isinstance(p, StiefelParameter):
-                    trans = retraction(p.data, self.state[id(p)])
-                    p.data.fill_(0).add_(trans)
-
-        return loss
+from spdnet.utils import *
+from spdnet import StiefelParameter
 
 """
 Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
@@ -137,7 +19,7 @@ class SPDTransform(nn.Module):
             self.increase_dim = SPDIncreaseDim(input_size, output_size)
             input_size = output_size
         self.weight = StiefelParameter(torch.FloatTensor(input_size, output_size), requires_grad=True)
-        nn.init.orthogonal(self.weight)
+        nn.init.orthogonal_(self.weight)
 
     def forward(self, input):
         output = input

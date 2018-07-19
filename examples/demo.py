@@ -8,37 +8,33 @@ import numpy as np
 from tqdm import tqdm
 
 from dataset import *
-from SPDNet import *
-
-class BaseNet(nn.Module):
-    def __init__(self):
-        super(BaseNet, self).__init__()
-        self.trans1 = SPDTransform(400, 200)
-        self.trans2 = SPDTransform(200, 100)
-        self.trans3 = SPDTransform(100, 50)
-        self.rect1  = SPDRectified()
-        self.rect2  = SPDRectified()
-        self.tangent = SPDTangentSpace(50, True)
-
-    def forward(self, x):
-        x = self.trans1(x)
-        x = self.rect1(x)
-        x = self.trans2(x)
-        x = self.rect2(x)
-        x = self.trans3(x)
-        x = self.tangent(x)
-        return x
+from spdnet.spd import SPDTransform, ParametricVectorize
+from spdnet.optimizer import StiefelMetaOptimizer
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.base = BaseNet()
-        self.linear = nn.Linear(1275, 7, bias=False)
-        # self.dropout = nn.Dropout(p=0.5)
+        self.trans1 = SPDTransform(400, 200)
+        self.trans2 = SPDTransform(200, 100)
+        self.trans3 = SPDTransform(100, 50)
+        # self.rect1  = SPDRectified()
+        # self.rect2  = SPDRectified()
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
+        self.tangent = ParametricVectorize(50, 30)
+        self.linear = nn.Linear(30, 7, bias=False)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, x):
-        x = self.base(x)
-        # x = self.dropout(x)
+        x = self.trans1(x)
+        # x = self.rect1(x)
+        x = self.relu1(x)
+        x = self.trans2(x)
+        # x = self.rect2(x)
+        x = self.relu2(x)
+        x = self.trans3(x)
+        x = self.tangent(x)
+        x = self.dropout(x)
         x = self.linear(x)
         return x
 
@@ -79,11 +75,14 @@ def test_net():
 
 # print('Test result: ', test_net())
 
+use_cuda = True
 model = Net()
+if use_cuda:
+    model = model.cuda()
 criterion = nn.CrossEntropyLoss()
 # optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-# optimizer = torch.optim.Adadelta(model.parameters())
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+optimizer = torch.optim.Adadelta(model.parameters())
+# optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 optimizer = StiefelMetaOptimizer(optimizer)
 # optimizer = Adadelta(model.parameters())
 
@@ -96,8 +95,12 @@ def train(epoch):
     total = 0.0
     bar = tqdm(enumerate(dataloader))
     for batch_idx, sample_batched in bar:
-        inputs = Variable(sample_batched['data'])
-        targets = Variable(sample_batched['label']).squeeze()
+        inputs = sample_batched['data']
+        targets = sample_batched['label'].squeeze()
+
+        if use_cuda:
+            inputs = inputs.cuda()
+            targets = targets.cuda()
 
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -124,8 +127,13 @@ def test(epoch):
     total = 0.0
     bar = tqdm(enumerate(dataloader_val))
     for batch_idx, sample_batched in bar:
-        inputs = Variable(sample_batched['data'])
-        targets = Variable(sample_batched['label']).squeeze()
+        inputs = sample_batched['data']
+        targets = sample_batched['label'].squeeze()
+
+        if use_cuda:
+            inputs = inputs.cuda()
+            targets = targets.cuda()
+
         outputs = model(inputs)
         loss = criterion(outputs, targets)
 

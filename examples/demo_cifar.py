@@ -45,8 +45,10 @@ class CifarNet(nn.Module):
         self.block_5 = BasicBlock(32, 32, 1) # 8
         self.block_6 = BasicBlock(32, 64, 2, bn=False, relu=False)
         self.gkernel = Covariance()#GaussianKernel(64, kernel_width=0.1, laplacian_kernel=False)
-        self.vec = SPDVectorize(65)
-        self.linear = nn.Linear(2145, 10, bias=True)
+        self.trans = SPDTransform(65, 32)
+        self.relu = nn.ReLU()
+        self.vec = ParametricVectorize(32, 20)
+        self.linear = nn.Linear(20, 10, bias=True)
 
     def forward(self, input, out_conv=False):
         
@@ -58,7 +60,9 @@ class CifarNet(nn.Module):
         out = self.block_6(out)
         out = out.view(out.size(0), out.size(1), -1)
         out = self.gkernel(out)
-        out = self.vec(out) 
+        out = self.trans(out)
+        out = self.relu(out)
+        out = self.vec(out)
         out = self.linear(out)
         
         return out
@@ -98,7 +102,7 @@ criterion = nn.CrossEntropyLoss()
 
 optimizer = optim.Adam(net.parameters(), lr=0.001)
 # optimizer_spdnet = optim.Adam(list(spdnet.parameters())+list(model_base.parameters()), lr=0.0001)
-# optimizer_spdnet = StiefelMetaOptimizer(optimizer_spdnet)
+optimizer = StiefelMetaOptimizer(optimizer)
 
 # Training
 def train(epoch):

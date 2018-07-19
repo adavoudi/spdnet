@@ -54,9 +54,22 @@ class KullbackDistance(nn.Module):
 
     def forward(self, A, B):
         dim = A.size(0)
-        logdet = torch.log(torch.potrf(A).diag().prod() / torch.potrf(B).diag().prod())
+        logdet = torch.log(torch.potrf(A).diag().prod() / (torch.potrf(B).diag().prod() + 0.00001) + 0.00001)
         kl = torch.mm(B.inverse(), A).trace() - dim + logdet
         return 0.5 * kl
+
+class LogEuclideanDistance(nn.Module):
+
+    def __init__(self):
+        super(LogEuclideanDistance, self).__init__()
+        self.log = SPDTangentSpace()
+
+    def forward(self, A, B):
+        A_log = self.log(A)
+        B_log = self.log(B)
+        out = A_log.sub(B_log).abs().view(-1).mean()
+        return out
+
 
 
 class VAELoss(nn.Module):
@@ -64,19 +77,21 @@ class VAELoss(nn.Module):
     def __init__(self, encoded_size):
         super(VAELoss, self).__init__()
         self.register_buffer('identity', torch.eye(encoded_size, encoded_size))
-        self.kldist = KullbackDistance()
+        self.kldist = LogEuclideanDistance()
 
     def forward(self, recon_x, orig_x, encoded_x):
         identity = Variable(self.identity, requires_grad=False)
-        kl_loss_reconstruction = 0
-        for index in range(recon_x.size(0)):
-            A = orig_x[index]
-            B = recon_x[index]
-            kl_loss_reconstruction -= self.kldist(A, B)
+        identity = identity.unsqueeze(0).expand(orig_x.size(0), -1, -1)
+        # kl_loss_reconstruction = 0
+        # for index in range(recon_x.size(0)):
+        #     A = orig_x[index]
+        #     B = recon_x[index]
+        #     kl_loss_reconstruction += self.kldist(A, B)
+        kl_loss_reconstruction = self.kldist(recon_x, orig_x)
 
-        kl_loss_encoding = 0
-        for index in range(encoded_x.size(0)):
-            kl_loss_encoding -= self.kldist(encoded_x[index], identity)
+        kl_loss_encoding = self.kldist(encoded_x, identity)
+        # for index in range(encoded_x.size(0)):
+        #     kl_loss_encoding += self.kldist(encoded_x[index], identity)
         
         loss = kl_loss_encoding + kl_loss_reconstruction
         return loss
@@ -130,7 +145,7 @@ class VAE(nn.Module):
 model = VAE()
 # model.load_state_dict(torch.load('./vae.pth'))
 
-optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad])
+optimizer = torch.optim.Adadelta([param for param in model.parameters() if param.requires_grad])
 optimizer = StiefelMetaOptimizer(optimizer)
 
 
@@ -169,15 +184,15 @@ try:
             
             optimizer.zero_grad()
             loss.backward()
-            train_loss += loss.data[0]
+            train_loss += loss.data.item()
             optimizer.step()
 
-            if batch_idx % 10 == 0:
+            if batch_idx % 2 == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch,
                     batch_idx * len(inputs),
                     len(dataloader.dataset), 100. * batch_idx / len(dataloader),
-                    loss.data[0] / len(inputs)))
+                    loss.data.item() / len(inputs)))
 
         print('====> Epoch: {} Average loss: {:.4f}'.format(
             epoch, train_loss / len(dataloader.dataset)))
