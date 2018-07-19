@@ -167,6 +167,20 @@ class SPDIncreaseDim(nn.Module):
         return output
 
 
+class ParametricVectorize(nn.Module):
+
+    def __init__(self, input_size, output_size):
+        super(ParametricVectorize, self).__init__()
+        self.weight = nn.Parameter(torch.ones(output_size, input_size), requires_grad=True)
+
+    def forward(self, input):
+        weight = self.weight.unsqueeze(0)
+        weight = weight.expand(input.size(0), -1, -1)
+        output = torch.bmm(weight, input)
+        output = torch.bmm(output, weight.transpose(1,2))
+        output = torch.mean(output, 2)
+        return output
+
 class SPDVectorize(nn.Module):
 
     def __init__(self, input_size):
