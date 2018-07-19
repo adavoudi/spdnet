@@ -4,7 +4,10 @@ from torch.autograd import Variable, Function
 
 import numpy as np
 
-
+"""
+The append mean approach:
+    Yu, K., & Salzmann, M. (2017). Second-order convolutional neural networks. arXiv preprint arXiv:1703.06817.
+"""
 class Covariance(nn.Module):
 
     def __init__(self, append_mean=True):

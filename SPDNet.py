@@ -125,7 +125,9 @@ class StiefelMetaOptimizer(object):
 
         return loss
 
-
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDTransform(nn.Module):
 
     def __init__(self, input_size, output_size):
@@ -166,7 +168,9 @@ class SPDIncreaseDim(nn.Module):
 
         return output
 
-
+"""
+Yu, K., & Salzmann, M. (2017). Second-order convolutional neural networks. arXiv preprint arXiv:1703.06817.
+"""
 class ParametricVectorize(nn.Module):
 
     def __init__(self, input_size, output_size):
@@ -181,6 +185,9 @@ class ParametricVectorize(nn.Module):
         output = torch.mean(output, 2)
         return output
 
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDVectorize(nn.Module):
 
     def __init__(self, input_size):
@@ -234,6 +241,9 @@ class SPDUnVectorize(nn.Module):
         return SPDUnVectorizeFunction.apply(input)
 
 
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDTangentSpaceFunction(Function):
 
     @staticmethod
@@ -283,6 +293,9 @@ class SPDTangentSpaceFunction(Function):
         return grad_input
 
 
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDTangentSpace(nn.Module):
 
     def __init__(self, input_size, vectorize=True):
@@ -362,7 +375,9 @@ class SPDUnTangentSpace(nn.Module):
         return output
 
 
-
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDRectifiedFunction(Function):
 
     @staticmethod
@@ -413,6 +428,9 @@ class SPDRectifiedFunction(Function):
         return grad_input, None
 
 
+"""
+Huang, Z., & Van Gool, L. J. (2017, February). A Riemannian Network for SPD Matrix Learning. In AAAI (Vol. 1, No. 2, p. 3).
+"""
 class SPDRectified(nn.Module):
 
     def __init__(self, epsilon=1e-4):
