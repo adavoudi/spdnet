@@ -1,7 +1,11 @@
-# spdnet
-Implementation of Deep SPDNet in pytorch
+You can choose _one_ of the following two ways to get started with spdnet.
 
-## Runing the demo
+1. Let pip install spdnet globally in dev mode (still globally accessible, but changes to the code immediately take effect)
+    ```bash
+    $ pip3 install -e .
+    ```
 
-1. Download the data from the [original repo](https://github.com/zzhiwu/SPDNet) and put them in the `data` directory
-2. run `python3 demo.py`
+2. Install with pip globally
+    ```
+    $ pip3 install .
+    ```
