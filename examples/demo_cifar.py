@@ -11,8 +11,10 @@ import os
 import torchvision
 import torchvision.transforms as transforms
 
-from MKNet import *
-from SPDNet import *
+from spdnet.spd import SPDTransform, ParametricVectorize
+from spdnet.optimizer import StiefelMetaOptimizer
+from spdnet.kernel import Covariance
+
 
 class BasicBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride, relu=True, bn=True):
@@ -101,7 +103,6 @@ if use_cuda:
 criterion = nn.CrossEntropyLoss()
 
 optimizer = optim.Adam(net.parameters(), lr=0.001)
-# optimizer_spdnet = optim.Adam(list(spdnet.parameters())+list(model_base.parameters()), lr=0.0001)
 optimizer = StiefelMetaOptimizer(optimizer)
 
 # Training
