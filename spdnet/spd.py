@@ -45,8 +45,8 @@ class SPDIncreaseDim(nn.Module):
         eye = eye.expand(input.size(0), -1, -1)
         add = self.add.unsqueeze(0)
         add = add.expand(input.size(0), -1, -1)
-        
-        output = torch.baddbmm(eye, torch.bmm(input, eye.transpose(1,2)), add)
+
+        output = torch.baddbmm(add, eye, torch.bmm(input, eye.transpose(1,2)))
 
         return output
 
