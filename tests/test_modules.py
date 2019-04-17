@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from SPDNet import *
+from spdnet.spd import * 
 
 class CTX:
     def __init__(self, saved_variables, needs_input_grad):
@@ -68,56 +68,17 @@ def check_Rectified():
 
     return (forward_eq and backward_eq)
 
+def check_UnTangentSpace():
+    tang = SPDTangentSpaceFunction.apply(spd)
+    untang = SPDUnTangentSpaceFunction.apply(tang)
 
-def check_Transform():
-    desired_forward = torch.from_numpy(np.asarray([
-        [5.2656,-0.8131,0.5717],
-        [-0.8131,3.4052,-0.3141],
-        [0.5717,-0.3141,3.2519]
-    ], np.float32))
-
-    desired_backward_net = torch.from_numpy(np.asarray([
-        [0.3814,-0.8837,-0.4667],
-        [-0.8837,2.0474,1.0814],
-        [-0.4667,1.0814,0.5712]
-    ], np.float32))
-
-    desired_backward_weight = torch.from_numpy(np.asarray([
-        [0.8207,0.8207,0.8207],
-        [-11.4424,-11.4424,-11.4424],
-        [-6.2772,-6.2772,-6.2772]
-    ], np.float32))
-
-    desired_weight = torch.from_numpy(np.asarray([
-        [0.6787,0.7195,0.1471],
-        [-0.6016,0.6596,-0.4505],
-        [-0.4211,0.2173,0.8806]
-    ], np.float32))
-
-    weight = torch.from_numpy(np.asarray([
-        [-0.4572,0.8640,0.2107],
-        [-0.5122,-0.0621,-0.8566],
-        [-0.7271,-0.4996,0.4709]
-    ], np.float32))
-
-    forward = SPDTransformFunction.apply(spd, weight)
-    backward = SPDTransformFunction.backward(CTX([spd, weight], [True, True]), grad_mat)
-    forward_eq = assertTensorEqual(forward, desired_forward, tolerance=1e-3)
-    backward_eq_1 = assertTensorEqual(backward[0], desired_backward_net, tolerance=1e-3)
-    backward_eq_2 = assertTensorEqual(backward[1], desired_backward_weight, tolerance=1e-4)
-
-    grad = orthogonal_projection(backward[1], weight)
-    new_weight = retraction(weight, -grad)
-
-    weight_eq = assertTensorEqual(new_weight, desired_weight, tolerance=1e-4)
-
-    return (forward_eq and backward_eq_1 and backward_eq_2 and weight_eq)
-
+    transform_assert = assertTensorEqual(spd, untang, tolerance=1e-4)
+    return transform_assert
 
 units = {
     'Tangent space layer': check_TangentSpace,
     'Rectification layer': check_Rectified,
-    'Transformation layer': check_Transform
+    'Untangent space layer': check_UnTangentSpace
 }
 
 result = True
@@ -130,6 +91,6 @@ for index, (name, func) in enumerate(units.items()):
 
 
 if result:
-    print('All tests past')
+    print('All tests passed')
 else:
     print('test failed')
