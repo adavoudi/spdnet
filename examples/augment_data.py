@@ -15,8 +15,8 @@ def augment(cov, tangent):
     out = untangent_space(rnd, cov)
     return out
 
-train_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=True)
-valid_dataset = AfewDataset('./data/AFEW', './data/AFEW/spddb_afew_train_spd400_int_histeq.mat', train=False)
+train_dataset = AfewDataset(train=True)
+valid_dataset = AfewDataset(train=False)
 
 train_dir = './data/augmented/train'
 valid_dir = './data/augmented/valid'

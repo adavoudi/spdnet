@@ -1,13 +1,83 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import os
 import random
 import numpy as np
 import scipy.io as spio
+from tqdm import tqdm
+from glob import glob
+import logging
+import sys
+from six.moves import urllib
+import zipfile
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from tqdm import tqdm
-from glob import glob
+
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
+                    level=logging.INFO,
+                    stream=sys.stdout)
+
+downloads = [
+    {'test': False, 'url': 'http://www.vision.ee.ethz.ch/~zzhiwu/codes/AFEW_SPD_data.zip',
+        'dst': './data/AFEW', 'zip': True, 'filename': 'data.zip'},
+    {'test': False, 'url': 'https://raw.githubusercontent.com/zzhiwu/SPDNet/master/data/spddb_afew_train_spd400_int_histeq.mat',
+        'dst': './data/AFEW', 'zip': False, 'filename': 'spddb_afew_train_spd400_int_histeq.mat'}
+]
+
+
+def download(url, dest_directory, filename, is_zip):
+    if not os.path.exists(dest_directory):
+        os.makedirs(dest_directory)
+
+    filepath = os.path.join(dest_directory, filename)
+
+    logging.info("Download URL: {}".format(url))
+    logging.info("Download DIR: {}".format(dest_directory))
+
+    def _progress(count, block_size, total_size):
+        prog = float(count * block_size) / float(total_size) * 100.0
+        sys.stdout.write('\r>> Downloading %s %.1f%%' %
+                         (filename, prog))
+        sys.stdout.flush()
+
+    filepath, _ = urllib.request.urlretrieve(url, filepath,
+                                             reporthook=_progress)
+    print()
+
+    if is_zip:
+        # Extract data
+        logging.info("Extracting " + filename + " ...")
+        zipfile.ZipFile(filepath, 'r').extractall(dest_directory)
+
+    return filepath
+
+
+def check_files(only_test):
+    for data in downloads:
+        if only_test and not data['test']:
+            continue
+        filepath = os.path.join(data['dst'], data['filename'])
+        if not os.path.exists(filepath):
+            return False
+    return True
+
+
+def download_dataset(only_test=False):
+
+    if check_files(only_test):
+        return
+
+    logging.info("Downloading data ...")
+    for data in downloads:
+        if only_test and not data['test']:
+            continue
+        download(data['url'], data['dst'], data['filename'], data['zip'])
+    logging.info("All data have been downloaded successfully.")
+
 
 def loadmat(filename):
     '''
@@ -44,14 +114,16 @@ def _todict(matobj):
 
 
 class AfewDataset(Dataset):
-    def __init__(self, base_path, dataset_path, shuffle=True, train=False, augmentation=False):
+    def __init__(self, shuffle=True, train=False, augmentation=False):
         super(AfewDataset, self).__init__()
 
-        self.train = train
-        self.base_path = base_path
-        self.dataset_path = dataset_path
+        download_dataset()
 
-        dataset = loadmat(dataset_path)
+        self.train = train
+        self.base_path = downloads[0]['dst']
+        self.dataset_path = os.path.join(self.base_path, downloads[1]['filename'])
+
+        dataset = loadmat(self.dataset_path)
         self.spd_path = [path.replace('\\', '/') for path in dataset['spd_train']['spd']['name']]
         self.labels = dataset['spd_train']['spd']['label']
         
