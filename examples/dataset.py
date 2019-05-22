@@ -24,7 +24,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
 downloads = [
     {'test': False, 'url': 'http://www.vision.ee.ethz.ch/~zzhiwu/codes/AFEW_SPD_data.zip',
         'dst': './data/AFEW', 'zip': True, 'filename': 'data.zip'},
-    {'test': False, 'url': 'https://raw.githubusercontent.com/zzhiwu/SPDNet/master/data/spddb_afew_train_spd400_int_histeq.mat',
+    {'test': False, 'url': 'https://github.com/zzhiwu/SPDNet/raw/master/data/afew/spddb_afew_train_spd400_int_histeq.mat',
         'dst': './data/AFEW', 'zip': False, 'filename': 'spddb_afew_train_spd400_int_histeq.mat'}
 ]
 
@@ -146,7 +146,7 @@ class AfewDataset(Dataset):
 
     def __getitem__(self, idx):
         index = self.data_index[idx]
-        data_path = os.path.join(self.base_path, self.spd_path[index])
+        data_path = os.path.join(self.base_path+'/spdface_400_inter_histeq', self.spd_path[index])
         data = loadmat(data_path)
         data = torch.from_numpy(data['Y1'])
         label = np.asarray([self.labels[index] - 1]).astype(np.long)
