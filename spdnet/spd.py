@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.optim.optimizer import Optimizer
-from torch.autograd import Variable, Function
+from torch.autograd import Function
 import numpy as np
 
 from spdnet.utils import *
@@ -320,8 +320,7 @@ class SPDRectified(nn.Module):
         self.register_buffer('epsilon', torch.FloatTensor([epsilon]))
 
     def forward(self, input):
-        epsilon = Variable(self.epsilon, requires_grad=False)
-        output = SPDRectifiedFunction.apply(input, epsilon)
+        output = SPDRectifiedFunction.apply(input, self.epsilon)
         return output
 
 
