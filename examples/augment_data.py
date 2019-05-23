@@ -4,7 +4,7 @@ import numpy as np
 import scipy.io as spio
 from torch.utils.data import Dataset, DataLoader
 import torch
-from SPDNet import untangent_space, symmetric, tangent_space
+from spdnet.utils import untangent_space, symmetric, tangent_space, is_pos_def
 from tqdm import tqdm
 from dataset import *
 from pathlib import Path
@@ -27,7 +27,7 @@ Path(valid_dir).mkdir(parents=True, exist_ok=True)
 print('Generating train dataset ...')
 for idx in tqdm(range(train_dataset.nSamples)):
     index = train_dataset.data_index[idx]
-    data_path = os.path.join(train_dataset.base_path, train_dataset.spd_path[index])
+    data_path = os.path.join(train_dataset.base_path,'spdface_400_inter_histeq', train_dataset.spd_path[index])
     data = loadmat(data_path)
     data = torch.from_numpy(data['Y1'])
     label = np.asarray([train_dataset.labels[index] - 1]).astype(np.long)

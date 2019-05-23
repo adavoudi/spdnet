@@ -146,7 +146,7 @@ class AfewDataset(Dataset):
 
     def __getitem__(self, idx):
         index = self.data_index[idx]
-        data_path = os.path.join(self.base_path+'/spdface_400_inter_histeq', self.spd_path[index])
+        data_path = os.path.join(self.base_path,'spdface_400_inter_histeq', self.spd_path[index])
         data = loadmat(data_path)
         data = torch.from_numpy(data['Y1'])
         label = np.asarray([self.labels[index] - 1]).astype(np.long)
