@@ -60,6 +60,7 @@ def orthogonal_projection(A, B):
 def retraction(A, ref):
     data = A + ref
     Q, R = data.qr()
+    # To avoid (any possible) negative values in the output matrix, we multiply the negative values by -1
     sign = (R.diag().sign() + 0.5).sign().diag()
     out = Q.mm(sign)
     return out
