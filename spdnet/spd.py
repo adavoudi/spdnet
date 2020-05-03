@@ -293,7 +293,7 @@ class SPDRectifiedFunction(Function):
                 
                 max_mask = s > epsilon
                 s_max_diag = s.clone(); s_max_diag[~max_mask] = epsilon; s_max_diag = s_max_diag.diag()
-                Q = max_mask.diag().float()
+                Q = max_mask.float().diag()
                 
                 dLdV = 2*(g.mm(u.mm(s_max_diag)))
                 dLdS = eye * (Q.mm(u.t().mm(g.mm(u))))
